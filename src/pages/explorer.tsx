@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Search, ArrowRight, CheckCircle2, XCircle, Info } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Search, CheckCircle2, XCircle, Info } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -16,6 +16,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { useRpc, useRpcUrl } from "@/hooks/use-rpc";
 import {
@@ -53,13 +54,13 @@ const VERIFICATION_COLORS: Record<string, string> = {
 };
 
 function blockTypeBadge(type: string) {
-  const color = BLOCK_TYPE_COLORS[type] ?? "border-zinc-500/50 bg-zinc-500/10 text-zinc-400";
-  return <Badge variant="outline" className={`text-xs ${color}`}>{type}</Badge>;
+  const color = BLOCK_TYPE_COLORS[type.toLowerCase()] ?? "border-zinc-500/50 bg-zinc-500/10 text-zinc-400";
+  return <Badge variant="outline" className={`text-caption ${color}`}>{type}</Badge>;
 }
 
 function verificationBadge(state: string) {
   const color = VERIFICATION_COLORS[state.toLowerCase()] ?? VERIFICATION_COLORS.unverified;
-  return <Badge variant="outline" className={`text-xs ${color}`}>{state}</Badge>;
+  return <Badge variant="outline" className={`text-caption ${color}`}>{state}</Badge>;
 }
 
 function BlockDetail({ data }: { data: BlockInfo }) {
@@ -67,7 +68,7 @@ function BlockDetail({ data }: { data: BlockInfo }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div className="flex items-center gap-3">
-          <CardTitle className="text-sm font-medium">Block Detail</CardTitle>
+          <CardTitle className="text-sm font-normal">Block Detail</CardTitle>
           {blockTypeBadge(data.block_type)}
         </div>
         {data.confirmed ? (
@@ -86,11 +87,7 @@ function BlockDetail({ data }: { data: BlockInfo }) {
         <dl className="grid gap-4 text-sm sm:grid-cols-2">
           <div className="sm:col-span-2">
             <dt className="text-muted-foreground">Account</dt>
-            <dd className="mt-0.5 font-mono text-xs break-all">{data.account}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Amount</dt>
-            <dd className="mt-0.5 font-mono font-medium">{formatAmount(data.amount)}</dd>
+            <dd className="mt-0.5 font-mono text-caption break-all">{data.account}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Timestamp</dt>
@@ -100,44 +97,44 @@ function BlockDetail({ data }: { data: BlockInfo }) {
             <div className="sm:col-span-2">
               <dt className="text-muted-foreground flex items-center gap-1">
                 Origin
-                <span className="text-xs text-muted-foreground/60">(original burn transaction)</span>
+                <span className="text-caption text-muted-foreground/60">(original burn transaction)</span>
               </dt>
-              <dd className="mt-0.5 font-mono text-xs break-all">{data.origin}</dd>
+              <dd className="mt-0.5 font-mono text-caption break-all">{data.origin}</dd>
             </div>
           )}
           {data.link && (
             <div className="sm:col-span-2">
               <dt className="text-muted-foreground flex items-center gap-1">
                 Link
-                <span className="text-xs text-muted-foreground/60">(previous in chain)</span>
+                <span className="text-caption text-muted-foreground/60">(linked block)</span>
               </dt>
-              <dd className="mt-0.5 font-mono text-xs break-all">{data.link}</dd>
+              <dd className="mt-0.5 font-mono text-caption break-all">{data.link}</dd>
             </div>
           )}
           {data.destination && (
             <div className="sm:col-span-2">
               <dt className="text-muted-foreground">Destination</dt>
-              <dd className="mt-0.5 font-mono text-xs break-all">{data.destination}</dd>
+              <dd className="mt-0.5 font-mono text-caption break-all">{data.destination}</dd>
             </div>
           )}
           <div>
-            <dt className="text-muted-foreground">BRN Balance</dt>
-            <dd className="mt-0.5 font-mono font-medium">{formatAmount(data.brn_balance)}</dd>
+            <dt className="text-muted-foreground">BRN Spent (burned + staked)</dt>
+            <dd className="mt-0.5 font-mono font-normal">{formatAmount(data.brn_balance)}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">TRST Balance</dt>
-            <dd className="mt-0.5 font-mono font-medium">{formatAmount(data.trst_balance)}</dd>
+            <dd className="mt-0.5 font-mono font-normal">{formatAmount(data.trst_balance)}</dd>
           </div>
           {data.representative && (
             <div className="sm:col-span-2">
               <dt className="text-muted-foreground">Representative</dt>
-              <dd className="mt-0.5 font-mono text-xs break-all">{data.representative}</dd>
+              <dd className="mt-0.5 font-mono text-caption break-all">{data.representative}</dd>
             </div>
           )}
           {data.previous && (
             <div className="sm:col-span-2">
               <dt className="text-muted-foreground">Previous Block</dt>
-              <dd className="mt-0.5 font-mono text-xs break-all">{data.previous}</dd>
+              <dd className="mt-0.5 font-mono text-caption break-all">{data.previous}</dd>
             </div>
           )}
         </dl>
@@ -150,31 +147,40 @@ function VerificationDialog({
   data,
   open,
   onClose,
+  error,
+  loading,
+  onRetry,
+  trigger,
 }: {
   data: AccountVerification | null;
   open: boolean;
   onClose: () => void;
+  error: string | null;
+  loading: boolean;
+  onRetry: () => void;
+  trigger: React.RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" onCloseAutoFocus={event => { event.preventDefault(); trigger.current?.focus(); }}>
         <DialogHeader>
-          <DialogTitle>Verification Details</DialogTitle>
+          <DialogTitle>Verification details</DialogTitle><DialogDescription>Endorsements, votes, and challenges for this account.</DialogDescription>
         </DialogHeader>
-        {data ? (
+        {error ? <div role="alert" className="space-y-3"><p>Verification unavailable</p><p className="break-words text-caption text-muted-foreground">{error}</p><Button onClick={onRetry} disabled={loading}>Try again</Button></div> : data ? (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               {verificationBadge(data.state)}
               {data.challenge_active && (
-                <Badge variant="outline" className="border-red-500/40 text-red-400 text-xs">
+                <Badge variant="outline" className="border-red-500/40 text-red-400 text-caption">
                   Challenge Active
                 </Badge>
               )}
             </div>
+            {data.selection_available !== true && <p role="status" className="text-ui text-muted-foreground">{data.selection_available === false ? "Verifier selection is paused on this node." : "This node hasn't reported verifier-selection availability."}</p>}
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <dt className="text-muted-foreground">Account</dt>
-                <dd className="mt-0.5 font-mono text-xs break-all">{data.account}</dd>
+                <dd className="mt-0.5 font-mono text-caption break-all">{data.account}</dd>
               </div>
               {data.verified_at && (
                 <div>
@@ -185,29 +191,29 @@ function VerificationDialog({
               <div>
                 <dt className="text-muted-foreground">Endorsements</dt>
                 <dd className="mt-0.5 font-mono">
-                  {data.endorsement_count} / {data.endorsement_threshold}
+                  {data.endorsement_count} / {data.endorsement_threshold ?? "—"}
                 </dd>
               </div>
             </dl>
             {data.endorsers.length > 0 && (
               <div>
-                <p className="mb-2 text-sm font-medium">Endorsers</p>
+                <p className="mb-2 text-sm font-normal">Endorsers</p>
                 <div className="space-y-1">
                   {data.endorsers.map((e) => (
-                    <p key={e} className="font-mono text-xs text-muted-foreground break-all">{e}</p>
+                    <p key={e} className="font-mono text-caption text-muted-foreground break-all">{e}</p>
                   ))}
                 </div>
               </div>
             )}
             {data.verifier_votes.length > 0 && (
               <div>
-                <p className="mb-2 text-sm font-medium">Verifier Votes</p>
+                <p className="mb-2 text-sm font-normal">Verifier Votes</p>
                 <div className="space-y-1">
                   {data.verifier_votes.map((v) => (
-                    <div key={v.verifier} className="flex items-center justify-between text-xs">
+                    <div key={v.verifier} className="flex items-center justify-between text-caption">
                       <span className="font-mono text-muted-foreground">{truncateAddress(v.verifier)}</span>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px]">{v.vote}</Badge>
+                        <Badge variant="outline" className="text-caption">{v.vote}</Badge>
                         <span className="text-muted-foreground">{formatTimestamp(v.timestamp)}</span>
                       </div>
                     </div>
@@ -227,15 +233,18 @@ function VerificationDialog({
 function AccountDetail({
   info,
   history,
-  historyCursor,
-  onLoadMore,
+  historyLoading,
+  historyError,
+  onRetryHistory,
 }: {
   info: AccountInfo;
   history: AccountHistory | null;
-  historyCursor?: string;
-  onLoadMore?: () => void;
+  historyLoading: boolean;
+  historyError: string | null;
+  onRetryHistory: () => void;
 }) {
   const { rpcUrl } = useRpcUrl();
+  const verificationTrigger = useRef<HTMLButtonElement>(null);
   const [showVerification, setShowVerification] = useState(false);
   const verification = useRpc<AccountVerification>(
     "get_account_verification",
@@ -246,24 +255,24 @@ function AccountDetail({
     <div className="space-y-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-medium">Account Info</CardTitle>
+          <CardTitle className="text-sm font-normal">Account Info</CardTitle>
           {verificationBadge(info.verification_state)}
         </CardHeader>
         <CardContent>
           <dl className="grid gap-4 text-sm sm:grid-cols-2">
             <div className="sm:col-span-2">
               <dt className="text-muted-foreground">Address</dt>
-              <dd className="mt-0.5 font-mono text-xs break-all">{info.address}</dd>
+              <dd className="mt-0.5 font-mono text-caption break-all">{info.address}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">BRN Balance</dt>
-              <dd className="mt-0.5 font-mono font-medium text-amber-400">
+              <dt className="text-muted-foreground">Available BRN</dt>
+              <dd className="mt-0.5 font-mono font-normal text-amber-400">
                 {formatAmount(info.brn_balance)}
               </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">TRST Balance (active)</dt>
-              <dd className="mt-0.5 font-mono font-medium text-green-400">
+              <dd className="mt-0.5 font-mono font-normal text-green-400">
                 {formatAmount(info.trst_balance)}
               </dd>
             </div>
@@ -293,13 +302,14 @@ function AccountDetail({
             </div>
             <div className="sm:col-span-2">
               <dt className="text-muted-foreground">Representative</dt>
-              <dd className="mt-0.5 font-mono text-xs break-all">{info.representative}</dd>
+              <dd className="mt-0.5 font-mono text-caption break-all">{info.representative}</dd>
             </div>
           </dl>
           <div className="mt-4">
             <Button
               variant="outline"
               size="sm"
+              ref={verificationTrigger}
               onClick={() => setShowVerification(true)}
             >
               View Verification Details
@@ -309,15 +319,22 @@ function AccountDetail({
       </Card>
 
       <VerificationDialog
+        error={verification.error}
+        loading={verification.loading}
+        onRetry={verification.refetch}
+        trigger={verificationTrigger}
         data={verification.data}
         open={showVerification}
         onClose={() => setShowVerification(false)}
       />
 
+      {historyError && <div role="alert" className="space-y-3 rounded-lg bg-muted p-4"><p>Account history unavailable</p><p className="break-words text-caption text-muted-foreground">{historyError}</p><Button onClick={onRetryHistory} disabled={historyLoading}>Try again</Button></div>}
+      {historyLoading && <Skeleton className="h-24 w-full" />}
+      {!historyLoading && !historyError && history?.history.length === 0 && <p className="text-muted-foreground">No account activity yet</p>}
       {history && history.history.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">
+            <CardTitle className="text-sm font-normal">
               Transaction History
             </CardTitle>
           </CardHeader>
@@ -326,37 +343,30 @@ function AccountDetail({
               {history.history.map((tx) => (
                 <div
                   key={tx.hash}
-                  className="flex items-center justify-between rounded-md border px-3 py-2.5 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2.5 text-sm"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       {blockTypeBadge(tx.block_type)}
-                      <span className="font-mono text-xs text-muted-foreground truncate">
+                      <span className="font-mono text-caption text-muted-foreground truncate">
                         {truncateHash(tx.hash)}
                       </span>
                     </div>
                     {tx.origin && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">
+                      <p className="mt-0.5 text-caption text-muted-foreground">
                         origin: <span className="font-mono">{truncateHash(tx.origin)}</span>
                       </p>
                     )}
                   </div>
-                  <div className="ml-4 text-right shrink-0">
-                    <p className="font-mono font-medium">{formatAmount(tx.amount)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatTimestamp(tx.timestamp)}
+                  <div className="min-w-0 text-end">
+                    <p className="break-all tabular-nums">{formatAmount(tx.amount)}</p>
+                    <p className="text-caption text-muted-foreground">
+                      TRST balance · {formatTimestamp(tx.timestamp)}
                     </p>
                   </div>
                 </div>
               ))}
             </div>
-            {historyCursor && onLoadMore && (
-              <div className="mt-3 flex justify-center">
-                <Button variant="outline" size="sm" onClick={onLoadMore}>
-                  Load More
-                </Button>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}
@@ -367,6 +377,8 @@ function AccountDetail({
 export default function Explorer() {
   const { rpcUrl } = useRpcUrl();
   const [searchType, setSearchType] = useState<"block" | "account">("account");
+  const [historyCursor, setHistoryCursor] = useState<string | undefined>();
+  const [previousCursors, setPreviousCursors] = useState<(string | undefined)[]>([]);
   const [query, setQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<"block" | "account">("account");
@@ -385,10 +397,12 @@ export default function Explorer() {
       : null,
   );
 
+  useEffect(() => { setHistoryCursor(undefined); setPreviousCursors([]); }, [rpcUrl]);
+
   const history = useRpc<AccountHistory>(
     "get_account_history",
     activeType === "account" && activeQuery
-      ? { rpcUrl, account: activeQuery, count: 20 }
+      ? { rpcUrl, account: activeQuery, count: 20, cursor: historyCursor }
       : null,
   );
 
@@ -396,6 +410,12 @@ export default function Explorer() {
     e.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) return;
+    setHistoryCursor(undefined);
+    setPreviousCursors([]);
+    if (trimmed === activeQuery && searchType === activeType) {
+      if (searchType === "block") block.refetch();
+      else { account.refetch(); if (!historyCursor) history.refetch(); }
+    }
     setActiveQuery(trimmed);
     setActiveType(searchType);
   }
@@ -423,7 +443,8 @@ export default function Explorer() {
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="burst_3abc...xyz"
+                  aria-label="Account address"
+                  placeholder="brst_… account address"
                   className="font-mono"
                 />
                 <Button type="submit" disabled={!query.trim()}>
@@ -437,6 +458,7 @@ export default function Explorer() {
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
+                  aria-label="Block hash"
                   placeholder="Block hash..."
                   className="font-mono"
                 />
@@ -447,6 +469,7 @@ export default function Explorer() {
               </form>
             </TabsContent>
           </Tabs>
+          {!activeQuery && <p className="mt-3 text-caption text-muted-foreground">Look up an account or block on this node.</p>}
         </CardContent>
       </Card>
 
@@ -470,18 +493,10 @@ export default function Explorer() {
       )}
 
       {!isLoading && activeType === "account" && account.data && (
-        <AccountDetail info={account.data} history={history.data} />
+        <div className="space-y-4"><AccountDetail key={rpcUrl + account.data.address} info={account.data} history={history.data} historyLoading={history.loading} historyError={history.error} onRetryHistory={history.refetch} />
+        {(previousCursors.length > 0 || history.data?.cursor) && <div className="flex flex-wrap justify-between gap-3"><Button variant="outline" disabled={!previousCursors.length || history.loading} onClick={() => { setHistoryCursor(previousCursors[previousCursors.length - 1]); setPreviousCursors(previous => previous.slice(0, -1)); }}>Previous page</Button><Button variant="outline" disabled={!history.data?.cursor || history.loading} onClick={() => { setPreviousCursors(previous => [...previous, historyCursor]); setHistoryCursor(history.data?.cursor); }}>Next page</Button></div>}</div>
       )}
 
-      {!activeQuery && !isLoading && (
-        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-          <Search className="mb-3 h-10 w-10" />
-          <p className="text-sm">
-            Enter an account address or block hash to explore the BURST ledger
-          </p>
-          <ArrowRight className="mt-2 h-4 w-4" />
-        </div>
-      )}
     </div>
   );
 }

@@ -1,150 +1,100 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Sliders,
-  Network,
-  Search,
-  ShieldCheck,
-  Vote,
-  GitBranch,
-  Settings,
-  ScrollText,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Zap,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { LayoutDashboard, SlidersHorizontal, Network, Search, ShieldCheck, Vote, GitBranch, Settings, ScrollText, Ellipsis, Plug } from "lucide-react";
+import { NodeIcon } from "@/components/burst-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useRpcUrl } from "@/hooks/use-rpc";
+import { AppearanceToggle } from "@/components/appearance-toggle";
 
-const navItems = [
-  { to: "/", label: "Network Overview", short: "Dashboard", icon: LayoutDashboard },
-  { to: "/parameters", label: "Protocol Parameters", short: "Parameters", icon: Sliders },
-  { to: "/peers", label: "Peers & Clock Sync", short: "Peers", icon: Network },
-  { to: "/explorer", label: "Block & Account Explorer", short: "Explorer", icon: Search },
-  { to: "/verification", label: "Verification Activity", short: "Verification", icon: ShieldCheck },
-  { to: "/governance", label: "Governance & Consti", short: "Governance", icon: Vote },
-  { to: "/merger-graph", label: "TRST Merger Graph", short: "Merger Graph", icon: GitBranch },
-  { to: "/config", label: "Node Configuration", short: "Config", icon: Settings },
-  { to: "/logs", label: "Node Logs", short: "Logs", icon: ScrollText },
-] as const;
+const destinations = [
+  { to: "/", label: "Overview", icon: LayoutDashboard, group: "node" },
+  { to: "/peers", label: "Peers", icon: Network, group: "node" },
+  { to: "/explorer", label: "Explorer", icon: Search, group: "node" },
+  { to: "/verification", label: "Verification", icon: ShieldCheck, group: "network" },
+  { to: "/governance", label: "Governance", icon: Vote, group: "network" },
+  { to: "/parameters", label: "Parameters", icon: SlidersHorizontal, group: "network" },
+  { to: "/merger-graph", label: "TRST origins", icon: GitBranch, group: "network" },
+  { to: "/config", label: "Settings", icon: Settings, group: "tools" },
+  { to: "/logs", label: "Logs", icon: ScrollText, group: "tools" },
+];
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
   const { rpcUrl, setRpcUrl } = useRpcUrl();
+  const [draftUrl, setDraftUrl] = useState(rpcUrl);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [connectionError, setConnectionError] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+  const menuNavigated = useRef(false);
+  const previousPath = useRef(location.pathname);
+  const currentPage = destinations.find(item => item.to === location.pathname) ?? destinations[0];
 
-  const currentPage =
-    navItems.find(
-      (item) =>
-        item.to === location.pathname ||
-        (item.to !== "/" && location.pathname.startsWith(item.to)),
-    ) ?? navItems[0];
+  useEffect(() => {
+    if (previousPath.current !== location.pathname) {
+      mainRef.current?.scrollTo(0, 0);
+      mainRef.current?.focus();
+      previousPath.current = location.pathname;
+    }
+  }, [location.pathname]);
 
-  return (
-    <div className="flex h-screen overflow-hidden">
-      <aside
-        className={cn(
-          "flex flex-col border-r border-sidebar-border bg-sidebar/80 backdrop-blur-lg transition-all duration-300",
-          collapsed ? "w-16" : "w-64",
-        )}
-      >
-        <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/15 animate-glow-ring">
-            <Zap className="h-4 w-4 text-primary" />
-          </div>
-          {!collapsed && (
-            <span className="text-sm font-bold tracking-wide gradient-text">
-              BURST Node
-            </span>
-          )}
+  function connect(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      const url = new URL(draftUrl.trim());
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
+      setRpcUrl(draftUrl.trim());
+      setConnectionOpen(false);
+      setConnectionError("");
+    } catch { setConnectionError("Enter an HTTP or HTTPS node URL without embedded credentials."); }
+  }
+
+  function link(item: typeof destinations[number], close = false) {
+    const Icon = item.icon;
+    return <NavLink key={item.to} to={item.to} end={item.to === "/"} className="nav-item" aria-label={item.label} onClick={() => { if (close) { menuNavigated.current = true; setMenuOpen(false); } }}><Icon aria-hidden="true" className="size-[18px] shrink-0" /><span>{item.label}</span></NavLink>;
+  }
+
+  return <div className="app-shell">
+    <a className="skip-link" href="#main-content">Skip to content</a>
+    <aside className="app-sidebar">
+      <NavLink to="/" className="brand-lockup" aria-label="Burst node home"><NodeIcon className="size-6" /><span className="brand-wordmark">burst<span className="brand-product">Node</span></span></NavLink>
+      <nav className="sidebar-navigation" aria-label="Node navigation">
+        <div className="nav-group">{destinations.filter(item => item.group === "node").map(item => link(item))}</div>
+        <div className="nav-group"><p className="nav-group-label">Network</p>{destinations.filter(item => item.group === "network").map(item => link(item))}</div>
+      </nav>
+      <div className="sidebar-footer">{destinations.filter(item => item.group === "tools").map(item => link(item))}</div>
+    </aside>
+    <div className="app-workspace">
+      <header className="app-header">
+        <div className="flex min-w-0 items-center gap-3"><NodeIcon className="mobile-brand size-6" /><span className="mobile-page-title truncate text-ui text-muted-foreground">Node</span></div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Dialog open={connectionOpen} onOpenChange={open => { setConnectionOpen(open); if (open) { setDraftUrl(rpcUrl); setConnectionError(""); } }}>
+            <DialogTrigger asChild><Button variant="ghost" className="text-muted-foreground" title={rpcUrl}><Plug />Connection</Button></DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Node connection</DialogTitle><DialogDescription>Choose the node this dashboard reads from.</DialogDescription></DialogHeader>
+              <form onSubmit={connect} className="space-y-4">
+                <div className="space-y-2"><label htmlFor="node-endpoint">Node URL</label><Input id="node-endpoint" value={draftUrl} onChange={e => setDraftUrl(e.target.value)} type="url" spellCheck={false} autoComplete="off" placeholder="http://127.0.0.1:7077" aria-invalid={!!connectionError} aria-describedby={connectionError ? "connection-error" : undefined} /></div>
+                {connectionError && <p id="connection-error" role="alert" className="text-destructive text-caption">{connectionError}</p>}
+                <Button type="submit" className="w-full">Connect</Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+          <AppearanceToggle />
         </div>
-
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive =
-              item.to === location.pathname ||
-              (item.to !== "/" && location.pathname.startsWith(item.to)) ||
-              (item.to === "/" && location.pathname === "/");
-
-            const link = (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={cn(
-                  "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200",
-                  isActive
-                    ? "bg-sidebar-accent text-primary"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                  collapsed && "justify-center px-2",
-                )}
-              >
-                {isActive && (
-                  <div className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-gradient-to-b from-primary to-primary/60" />
-                )}
-                <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed && <span>{item.short}</span>}
-              </NavLink>
-            );
-
-            if (collapsed) {
-              return (
-                <Tooltip key={item.to} delayDuration={0}>
-                  <TooltipTrigger asChild>{link}</TooltipTrigger>
-                  <TooltipContent side="right">{item.label}</TooltipContent>
-                </Tooltip>
-              );
-            }
-
-            return link;
-          })}
-        </nav>
-
-        <div className="p-2">
-          <Separator className="mb-2" />
-          {!collapsed && (
-            <div className="space-y-1.5 px-1 pb-1">
-              <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                RPC Endpoint
-              </label>
-              <Input
-                value={rpcUrl}
-                onChange={(e) => setRpcUrl(e.target.value)}
-                className="h-7 bg-sidebar-accent text-xs font-mono"
-                placeholder="http://127.0.0.1:7077"
-              />
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setCollapsed(!collapsed)}
-            className="w-full"
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="h-4 w-4" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </aside>
-
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center border-b bg-card/30 backdrop-blur-sm px-6">
-          <h1 className="text-lg font-semibold">{currentPage.label}</h1>
-        </header>
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
-      </div>
+      </header>
+      <main ref={mainRef} id="main-content" tabIndex={-1}><div className="app-content">{location.pathname !== "/" && <div className="page-heading"><h1>{currentPage.label}</h1></div>}{children}</div></main>
+      <nav className="mobile-navigation" aria-label="Mobile node navigation">
+        {destinations.slice(0,3).map(item => link(item))}
+        <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+          <DialogTrigger asChild><button className="nav-item"><Ellipsis aria-hidden="true" className="size-5" /><span>More</span></button></DialogTrigger>
+          <DialogContent onCloseAutoFocus={event => { if (menuNavigated.current) { event.preventDefault(); menuNavigated.current = false; mainRef.current?.focus(); } }}>
+            <DialogHeader><DialogTitle>Node tools</DialogTitle><DialogDescription>Network activity and diagnostics.</DialogDescription></DialogHeader>
+            <nav aria-label="All node destinations" className="grid grid-cols-2 gap-2">{destinations.slice(3).map(item => link(item,true))}</nav>
+          </DialogContent>
+        </Dialog>
+      </nav>
     </div>
-  );
+  </div>;
 }

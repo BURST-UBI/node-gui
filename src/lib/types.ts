@@ -1,4 +1,6 @@
 export interface Telemetry {
+  network?: string | null;
+  faucet_enabled?: boolean;
   block_count: number;
   account_count: number;
   peer_count: number;
@@ -9,7 +11,7 @@ export interface Telemetry {
   trst_circulating: string;
   trst_expired_total: string;
   trst_revoked_total: string;
-  ntp_offset_ms: number;
+  ntp_offset_ms: number | null;
 }
 
 export interface ProtocolParams {
@@ -31,9 +33,9 @@ export interface ProtocolParams {
 
 export interface Peer {
   address: string;
-  protocol_version: number;
+  protocol_version: number | null;
   node_id: string;
-  clock_offset_ms: number;
+  clock_offset_ms: number | null;
   last_seen: number;
   connection_type: string;
 }
@@ -48,6 +50,7 @@ export interface BlockInfo {
   account: string;
   previous: string;
   representative: string;
+  /** Ascending odometer of cumulative BRN spent (burned+staked) — NOT available balance. */
   brn_balance: string;
   trst_balance: string;
   link: string;
@@ -60,6 +63,7 @@ export interface BlockInfo {
 
 export interface AccountInfo {
   address: string;
+  /** Spendable BRN computed by the account RPC (not the state-block odometer). */
   brn_balance: string;
   trst_balance: string;
   trst_expired: string;
@@ -74,6 +78,7 @@ export interface AccountInfo {
 }
 
 export interface AccountBalance {
+  /** Spendable BRN computed by the account RPC. */
   brn_balance: string;
   trst_balance: string;
 }
@@ -140,10 +145,11 @@ export interface AccountVerification {
   state: string;
   verified_at: number | null;
   endorsement_count: number;
-  endorsement_threshold: number;
+  endorsement_threshold: number | null;
   endorsers: string[];
   verifier_votes: VerifierVote[];
   challenge_active: boolean;
+  selection_available?: boolean | null;
 }
 
 export interface Proposal {
@@ -169,13 +175,13 @@ export interface ConstiArticle {
   id: string;
   title: string;
   text: string;
-  adopted_at: number;
-  amended_at?: number;
+  adopted_at: number | null;
+  amended_at?: number | null;
 }
 
 export interface Consti {
   articles: ConstiArticle[];
-  amendment_threshold: number;
+  amendment_threshold: string;
 }
 
 export interface Representative {
@@ -199,7 +205,7 @@ export interface MergerGraphStats {
 
 export interface ForwardMerge {
   merge_hash: string;
-  holder: string;
+  holder: string | null;
   amount: string;
   timestamp: number;
 }

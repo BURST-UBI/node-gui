@@ -1,157 +1,64 @@
-import { useState, useEffect, useRef } from "react";
-import {
-  Blocks,
-  Users,
-  Radio,
-  Clock,
-  Coins,
-  Timer,
-  Activity,
-  Info,
-} from "lucide-react";
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip as RechartsTooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MetricGroup, MetricItem } from "@/components/metric-group";
+import { BrnIcon, TrstIcon } from "@/components/burst-icons";
+import { HelpLabel } from "@/components/help-label";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import type { TelemetrySnapshot } from "@/components/telemetry-chart";
+import { Card, CardContent } from "@/components/ui/card";
+import { Surface } from "@/components/ui/surface";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { useRpc, useRpcUrl } from "@/hooks/use-rpc";
 import { formatUptime, formatAmount, formatExpiryPeriod } from "@/lib/utils";
 import type { Telemetry, ProtocolParams } from "@/lib/types";
 
-interface TelemetrySnapshot {
-  time: string;
-  blocks: number;
-  peers: number;
-  trst: number;
-  verified: number;
-}
+const MiniChart = lazy(() => import("@/components/telemetry-chart"));
 
-function NtpIndicator({ offsetMs }: { offsetMs: number }) {
+function NtpIndicator({ offsetMs }: { offsetMs: number | null }) {
+  if (offsetMs === null) return <p className="text-sm text-muted-foreground">No recent successful clock synchronization</p>;
   const abs = Math.abs(offsetMs);
-  let color = "bg-green-500";
-  let glowClass = "shadow-green-500/40";
+  let color = "bg-success";
   let label = "Excellent";
   if (abs > 2000) {
-    color = "bg-red-500";
-    glowClass = "shadow-red-500/40";
+    color = "bg-destructive";
     label = "Poor";
   } else if (abs > 500) {
-    color = "bg-amber-500";
-    glowClass = "shadow-amber-500/40";
+    color = "bg-warning";
     label = "Acceptable";
   }
   return (
-    <div className="flex items-center gap-2">
-      <span className={`inline-block h-3 w-3 rounded-full ${color} shadow-lg ${glowClass} animate-pulse-glow`} />
-      <span className="font-mono text-2xl font-bold">{offsetMs}ms</span>
-      <span className="text-sm text-muted-foreground">({label})</span>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
+      <span className="tabular-nums">{offsetMs} ms</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
     </div>
-  );
-}
-
-function PulsingIcon({ children, color }: { children: React.ReactNode; color: string }) {
-  return (
-    <div className="relative">
-      <div className={`absolute inset-0 rounded-full ${color} animate-ping opacity-20`} />
-      {children}
-    </div>
-  );
-}
-
-function MiniChart({
-  data,
-  dataKey,
-  color,
-  type,
-  title,
-}: {
-  data: TelemetrySnapshot[];
-  dataKey: keyof TelemetrySnapshot;
-  color: string;
-  type: "line" | "area";
-  title: string;
-}) {
-  if (data.length < 2) {
-    return (
-      <div className="flex h-32 items-center justify-center text-xs text-muted-foreground">
-        Collecting data...
-      </div>
-    );
-  }
-
-  const Chart = type === "area" ? AreaChart : LineChart;
-
-  return (
-    <ResponsiveContainer width="100%" height={128}>
-      <Chart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-        <defs>
-          <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-            <stop offset="100%" stopColor={color} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <XAxis dataKey="time" hide />
-        <YAxis hide domain={["dataMin", "dataMax"]} />
-        <RechartsTooltip
-          contentStyle={{
-            background: "oklch(0.13 0.014 265)",
-            border: "1px solid oklch(0.22 0.014 265)",
-            borderRadius: "8px",
-            fontSize: "11px",
-          }}
-          labelStyle={{ color: "oklch(0.556 0.014 265)" }}
-        />
-        {type === "area" ? (
-          <Area
-            type="monotone"
-            dataKey={dataKey}
-            stroke={color}
-            strokeWidth={2}
-            fill={`url(#grad-${dataKey})`}
-            dot={false}
-            animationDuration={300}
-          />
-        ) : (
-          <Line
-            type="monotone"
-            dataKey={dataKey}
-            stroke={color}
-            strokeWidth={2}
-            dot={false}
-            animationDuration={300}
-          />
-        )}
-      </Chart>
-    </ResponsiveContainer>
   );
 }
 
 export default function Overview() {
   const { rpcUrl } = useRpcUrl();
-  const { data, loading, error } = useRpc<Telemetry>(
+  const { data, loading, error, refetch } = useRpc<Telemetry>(
     "get_telemetry",
     { rpcUrl },
     5000,
   );
-  const { data: params } = useRpc<ProtocolParams>(
+  const { data: params, error: paramsError } = useRpc<ProtocolParams>(
     "get_protocol_params",
     { rpcUrl },
     30000,
   );
 
+  const [chart, setChart] = useState<"blocks" | "peers" | "trst" | "verified">("blocks");
   const [history, setHistory] = useState<TelemetrySnapshot[]>([]);
   const lastDataRef = useRef<string>("");
 
   useEffect(() => {
+    setHistory([]);
+    lastDataRef.current = "";
+  }, [rpcUrl]);
+
+  useEffect(() => {
     if (!data) return;
-    const sig = `${data.block_count}-${data.peer_count}-${data.trst_circulating}`;
+    const sig = `${data.uptime_secs}-${data.block_count}-${data.peer_count}-${data.trst_circulating}-${data.verified_count}`;
     if (sig === lastDataRef.current) return;
     lastDataRef.current = sig;
 
@@ -159,7 +66,7 @@ export default function Overview() {
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
       blocks: data.block_count,
       peers: data.peer_count,
-      trst: parseFloat(formatAmount(data.trst_circulating)),
+      trst: Number(data.trst_circulating) / 1e18,
       verified: data.verified_count,
     };
 
@@ -172,11 +79,13 @@ export default function Overview() {
   if (error) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Card className="max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-sm text-destructive">
-              Failed to connect to node: {error}
-            </p>
+        <Card role="alert" className="w-full max-w-lg border-warning/30">
+          <CardContent className="space-y-4 pt-6">
+            <h2 className="text-heading font-normal">Node unavailable</h2>
+            <p className="text-sm text-muted-foreground">Start your node or choose a different endpoint using Connection above.</p>
+            <p className="break-all font-mono text-caption text-muted-foreground">{rpcUrl}</p>
+            <p className="break-words text-caption text-muted-foreground">{error}</p>
+            <Button onClick={refetch} disabled={loading}>{loading ? "Connecting…" : "Try again"}</Button>
           </CardContent>
         </Card>
       </div>
@@ -184,261 +93,111 @@ export default function Overview() {
   }
 
   const isLoading = loading && !data;
+  const clockNeedsAttention = data && (data.ntp_offset_ms === null || Math.abs(data.ntp_offset_ms) > 2000);
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="animate-fade-in-up">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Blocks
-            </CardTitle>
-            <PulsingIcon color="bg-blue-400">
-              <Blocks className="h-4 w-4 text-blue-400" />
-            </PulsingIcon>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-24" />
-            ) : (
-              <p className="text-2xl font-bold font-mono">
-                {data?.block_count.toLocaleString()}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "50ms" }}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Accounts
-            </CardTitle>
-            <PulsingIcon color="bg-purple-400">
-              <Users className="h-4 w-4 text-purple-400" />
-            </PulsingIcon>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-24" />
-            ) : (
-              <>
-                <p className="text-2xl font-bold font-mono">
-                  {data?.account_count.toLocaleString()}
-                </p>
-                {data && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <span className="text-green-400">{data.verified_count} verified</span>
-                    {" · "}
-                    <span className="text-zinc-400">{data.unverified_count} unverified</span>
-                  </p>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "100ms" }}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Peers
-            </CardTitle>
-            <PulsingIcon color="bg-cyan-400">
-              <Radio className="h-4 w-4 text-cyan-400" />
-            </PulsingIcon>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-24" />
-            ) : (
-              <p className="text-2xl font-bold font-mono">
-                {data?.peer_count.toLocaleString()}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "150ms" }}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Uptime
-            </CardTitle>
-            <PulsingIcon color="bg-emerald-400">
-              <Clock className="h-4 w-4 text-emerald-400" />
-            </PulsingIcon>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-24" />
-            ) : (
-              <p className="text-2xl font-bold font-mono">
-                {data ? formatUptime(data.uptime_secs) : "\u2014"}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+    <div className="node-overview space-y-6">
+      <div role="status" className="network-notice">
+        {!data ? "Checking network…" : data.network === "dev" || data.network === "test"
+          ? `${data.network === "dev" ? "Devnet" : "Testnet"} — test funds only, no real value. ${data.faucet_enabled ? "Test faucet enabled." : "Test faucet disabled."}`
+          : data.network === "live"
+            ? "Mainnet — test tools are unavailable."
+            : "Network not reported by this node — upgrade the node to identify its network."}
       </div>
-
-      {/* Live Charts */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="animate-fade-in-up" style={{ animationDelay: "200ms" }}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Block Count</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MiniChart data={history} dataKey="blocks" color="#60a5fa" type="line" title="Blocks" />
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "250ms" }}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Peer Count</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MiniChart data={history} dataKey="peers" color="#22d3ee" type="area" title="Peers" />
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "300ms" }}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">TRST Circulation</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MiniChart data={history} dataKey="trst" color="#4ade80" type="area" title="TRST" />
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "350ms" }}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Verified Wallets</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MiniChart data={history} dataKey="verified" color="#a78bfa" type="line" title="Verified" />
-          </CardContent>
-        </Card>
+      <div className="node-status">
+        <div>
+          <h1>{!data ? "Connecting to your node" : data.peer_count > 0 ? "Your node is connected" : "Your node is isolated"}</h1>
+          <p>{!data ? "Waiting for a response…" : data.peer_count > 0 ? `Connected to ${data.peer_count} ${data.peer_count === 1 ? "peer" : "peers"}. Running for ${formatUptime(data.uptime_secs)}.` : "The node is running, but it cannot exchange blocks without peers."}</p>
+        </div>
+        <span aria-hidden="true" className="status-orb" style={{ background: !data || !data.peer_count ? "var(--color-warning)" : "var(--color-success)" }} />
       </div>
+      <MetricGroup aria-label="Node summary" className="overview-summary">
+        {[
+          { label: "Blocks", value: data?.block_count.toLocaleString() },
+          { label: "Accounts", value: data?.account_count.toLocaleString() },
+          { label: "Peers", value: data?.peer_count.toLocaleString() },
+          { label: "Uptime", value: data ? formatUptime(data.uptime_secs) : undefined },
+        ].map(metric => (
+          <MetricItem key={metric.label} label={metric.label === "Accounts" && data
+            ? <HelpLabel label="Accounts" explanation={`${data.verified_count.toLocaleString()} verified · ${data.unverified_count.toLocaleString()} unverified`} />
+            : metric.label}>
+            {isLoading ? <Skeleton className="h-5 w-12" /> : metric.value ?? "—"}
+          </MetricItem>
+        ))}
+      </MetricGroup>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="animate-fade-in-up" style={{ animationDelay: "400ms" }}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              BRN Rate
-            </CardTitle>
-            <Coins className="h-4 w-4 text-amber-400" />
-          </CardHeader>
-          <CardContent>
-            {!params ? (
-              <Skeleton className="h-7 w-32" />
-            ) : (
-              <>
-                <p className="text-2xl font-bold font-mono text-amber-400">
-                  {formatAmount(params.brn_rate)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  BRN/second per verified wallet
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "450ms" }}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              TRST Expiry
-            </CardTitle>
-            <Timer className="h-4 w-4 text-cyan-400" />
-          </CardHeader>
-          <CardContent>
-            {!params ? (
-              <Skeleton className="h-7 w-32" />
-            ) : (
-              <>
-                <p className="text-2xl font-bold font-mono text-cyan-400">
-                  {formatExpiryPeriod(params.trst_expiry_secs)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Time until TRST expires after creation
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "500ms" }}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              TRST Circulation
-            </CardTitle>
-            <Activity className="h-4 w-4 text-green-400" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-32" />
-            ) : (
-              <>
-                <p className="text-2xl font-bold font-mono text-green-400">
-                  {data ? formatAmount(data.trst_circulating) : "\u2014"}
-                </p>
-                {data && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <span className="text-zinc-400">{formatAmount(data.trst_expired_total)} expired</span>
-                    {" · "}
-                    <span className="text-red-400">{formatAmount(data.trst_revoked_total)} revoked</span>
-                  </p>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="animate-fade-in-up" style={{ animationDelay: "550ms" }}>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">NTP Clock Offset</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-32" />
-            ) : data ? (
-              <NtpIndicator offsetMs={data.ntp_offset_ms} />
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in-up" style={{ animationDelay: "600ms" }}>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Protocol Version</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-7 w-16" />
-            ) : (
-              <p className="text-2xl font-bold font-mono">
-                {data?.protocol_version}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {params && (
-        <div className="rounded-lg border-l-4 border-primary bg-muted/50 p-4 animate-fade-in-up" style={{ animationDelay: "650ms" }}>
-          <div className="flex items-start gap-3">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <div className="text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">BURST is a parameterized economic protocol.</p>
-              <p className="mt-1">
-                BRN rate and TRST expiry are the two parameters that define the economic model.
-                Normal money is the special case where rate = 0 and expiry = {"\u221E"}.
-                Current configuration:{" "}
-                <span className="font-mono text-amber-400">{formatAmount(params.brn_rate)} BRN/s</span>,{" "}
-                <span className="font-mono text-cyan-400">{formatExpiryPeriod(params.trst_expiry_secs)} expiry</span>.
-              </p>
-            </div>
-          </div>
+      {(clockNeedsAttention || paramsError || (data && (BigInt(data.trst_expired_total) > 0n || BigInt(data.trst_revoked_total) > 0n))) && (
+        <div className="overview-notices" role="status">
+          {clockNeedsAttention && <p className="text-warning">{data.ntp_offset_ms === null ? "No recent successful clock synchronization" : `Clock offset ${data.ntp_offset_ms} ms — Poor synchronization`}</p>}
+          {paramsError && <p className="text-warning">Network parameters unavailable. Retrying…</p>}
+          {data && BigInt(data.trst_expired_total) > 0n && <p>{formatAmount(data.trst_expired_total)} expired TRST</p>}
+          {data && BigInt(data.trst_revoked_total) > 0n && <p className="text-destructive">{formatAmount(data.trst_revoked_total)} revoked TRST</p>}
         </div>
       )}
+
+      <Surface aria-label="Node activity">
+        <div className="flex flex-col gap-2 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-ui"><HelpLabel label="Activity" explanation="This session’s last 60 samples, updated every 5 seconds." /></h2>
+            <div role="group" aria-label="Activity chart" className="overview-chart-controls flex flex-wrap gap-1">
+              {([["blocks", "Blocks"], ["peers", "Peers"], ["trst", "TRST"], ["verified", "Verified"]] as const).map(([key, label]) => (
+                <Button key={key} size="sm" variant={chart === key ? "secondary" : "ghost"} aria-pressed={chart === key} onClick={() => setChart(key)}>{label}</Button>
+              ))}
+            </div>
+          </div>
+          <div className="min-w-0 overflow-hidden" role="img" aria-label={`${chart} over this session; ${history.length} samples collected`}>
+            <Suspense fallback={<div className="flex h-24 items-center justify-center text-caption text-muted-foreground">Loading chart…</div>}>
+            {history.length < 2 ? <div className="flex h-24 items-center justify-center text-caption text-muted-foreground">Collecting data…</div> : <MiniChart data={history} dataKey={chart} color="var(--color-primary)" type={chart === "blocks" || chart === "verified" ? "line" : "area"} />}
+            </Suspense>
+          </div>
+          {data && <p className="sr-only">Latest: {data.block_count.toLocaleString()} {data.block_count === 1 ? "block" : "blocks"} · {data.peer_count.toLocaleString()} {data.peer_count === 1 ? "peer" : "peers"} · {formatAmount(data.trst_circulating)} TRST · {data.verified_count.toLocaleString()} verified {data.verified_count === 1 ? "wallet" : "wallets"}</p>}
+        </div>
+      </Surface>
+
+      <details className="overview-details">
+        <summary>Network details</summary>
+        <MetricGroup aria-label="Network details" className="overview-detail-values">
+          <MetricItem label={<HelpLabel label="Clock offset" explanation="Difference from network time. Large clock errors can disrupt node operation." />}>
+            {isLoading ? <Skeleton className="h-5 w-24" /> : data ? <NtpIndicator offsetMs={data.ntp_offset_ms} /> : "—"}
+          </MetricItem>
+          <MetricItem label="Protocol version">{isLoading ? <Skeleton className="h-5 w-8" /> : data?.protocol_version ?? "—"}</MetricItem>
+          <MetricItem label={<span className="metric-symbol-label">
+              <BrnIcon className="size-7" />
+              <HelpLabel label="BRN" explanation="BRN earned per second by each verified wallet." />
+            </span>}>
+            {paramsError ? <p role="status" className="text-caption text-warning">Parameters unavailable. Retrying…</p> : !params ? (
+              <Skeleton className="h-6 w-28" />
+            ) : (
+              <p className="metric-amount">
+                {formatAmount(params.brn_rate)}<span className="text-caption text-muted-foreground">/ sec</span>
+              </p>
+            )}
+          </MetricItem>
+          <MetricItem label={<span className="metric-symbol-label">
+              <TrstIcon className="size-7" />
+              <HelpLabel label="TRST" explanation="Active TRST held across accounts known to this node. Expiry is measured from creation; no expiry means it does not expire with time." />
+            </span>}>
+            {isLoading ? (
+              <Skeleton className="h-6 w-12" />
+            ) : (
+              <p className="metric-amount">
+                <span className="sr-only">Active TRST: </span>{data ? formatAmount(data.trst_circulating) : "—"}
+              </p>
+            )}
+            <div className="metric-meta">
+              {paramsError ? <p role="status" className="text-caption text-warning">Parameters unavailable. Retrying…</p> : !params ? (
+                <Skeleton className="h-4 w-20" />
+              ) : (
+                <p>{params.trst_expiry_secs === Number(18446744073709551615n) ? "No expiry" : `Expiry ${formatExpiryPeriod(params.trst_expiry_secs)}`}</p>
+              )}
+              {data && BigInt(data.trst_expired_total) > 0n && <p>{formatAmount(data.trst_expired_total)} expired</p>}
+              {data && BigInt(data.trst_revoked_total) > 0n && <p className="text-destructive">{formatAmount(data.trst_revoked_total)} revoked</p>}
+            </div>
+          </MetricItem>
+
+        </MetricGroup>
+      </details>
+
     </div>
   );
 }

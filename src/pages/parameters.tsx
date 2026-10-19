@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+import { ContextHelp } from "@/components/context-help";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -17,10 +17,10 @@ function ParamRow({ label, value, description, accent }: ParamRowProps) {
   return (
     <div className="flex items-start justify-between gap-4 py-3">
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        <p className="text-sm font-normal">{label}</p>
+        <p className="mt-0.5 text-caption text-muted-foreground">{description}</p>
       </div>
-      <span className={`shrink-0 font-mono text-sm font-semibold ${accent ?? ""}`}>
+      <span className={`shrink-0 font-mono text-sm font-normal ${accent ?? ""}`}>
         {value}
       </span>
     </div>
@@ -42,7 +42,7 @@ export default function Parameters() {
           <p className="text-sm text-muted-foreground">
             Protocol parameters are not available on this node.
           </p>
-          <p className="mt-2 text-xs text-muted-foreground/80">{error}</p>
+          <p className="mt-2 text-caption text-muted-foreground/80">{error}</p>
         </CardContent>
       </Card>
     );
@@ -64,19 +64,19 @@ export default function Parameters() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Economic Parameters</CardTitle>
+          <CardTitle className="text-heading">Economic Parameters</CardTitle>
         </CardHeader>
         <CardContent className="divide-y">
           <ParamRow
             label="BRN Accrual Rate"
             value={`${formatAmount(data.brn_rate)} / sec`}
-            description="BRN accrued per second per verified wallet. BRN = rate × (now − verified_at) − total_burned."
+            description="Current accrual rate per verified wallet. Available BRN integrates each historical rate, less burns and active stakes."
             accent="text-amber-400"
           />
           <ParamRow
             label="TRST Expiry Period"
             value={formatExpiryPeriod(data.trst_expiry_secs)}
-            description="How long TRST remains transferable after creation. Value declines as expiry approaches."
+            description="Transferable lifetime measured from its origin. Merged TRST inherits the earliest expiry of its inputs; expired amounts remain as reputation."
             accent="text-cyan-400"
           />
         </CardContent>
@@ -84,7 +84,7 @@ export default function Parameters() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Verification Parameters</CardTitle>
+          <CardTitle className="text-heading">Verification Parameters</CardTitle>
         </CardHeader>
         <CardContent className="divide-y">
           <ParamRow
@@ -123,7 +123,7 @@ export default function Parameters() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Governance Parameters</CardTitle>
+          <CardTitle className="text-heading">Governance Parameters</CardTitle>
         </CardHeader>
         <CardContent className="divide-y">
           <ParamRow
@@ -156,7 +156,7 @@ export default function Parameters() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Other</CardTitle>
+          <CardTitle className="text-heading">Other</CardTitle>
         </CardHeader>
         <CardContent>
           <ParamRow
@@ -167,19 +167,10 @@ export default function Parameters() {
         </CardContent>
       </Card>
 
-      <div className="rounded-lg border-l-4 border-primary bg-muted/50 p-4">
-        <div className="flex items-start gap-3">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <div className="text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">All parameters are democratically governable.</p>
-            <p className="mt-1">
-              Any verified wallet can propose a change. Changes follow the 4-phase process:
-              Proposal → Voting → Cooldown → Activation. The BRN rate and TRST expiry period
-              together span the full economic spectrum — from pure capitalism to pure communism.
-            </p>
-          </div>
-        </div>
-      </div>
+      <ContextHelp summary="How parameters change">
+        <p>Any verified wallet can propose a change. Proposals move through voting, cooldown, and activation.</p>
+        <p>The BRN rate and TRST expiry period are governed together, allowing different economic models without changing the protocol’s core design.</p>
+      </ContextHelp>
     </div>
   );
 }

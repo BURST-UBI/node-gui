@@ -1,113 +1,70 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Save, FolderOpen, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+// Keep unsaved configuration in memory across routes; never persist possible secrets.
+let draft = { path: "/etc/burst/config.toml", loadedPath: "", content: "", saved: "", busy: false, error: "" };
+const listeners = new Set<() => void>();
+function update(next: Partial<typeof draft>) { draft = {...draft, ...next}; listeners.forEach(listener => listener()); }
+function subscribe(listener: () => void) { listeners.add(listener); return () => {listeners.delete(listener);}; }
+
+function warnUnsaved(event: BeforeUnloadEvent) {
+  if (draft.content !== draft.saved || draft.busy) {event.preventDefault(); event.returnValue = "";}
+}
+window.addEventListener("beforeunload", warnUnsaved);
+if (import.meta.hot) import.meta.hot.dispose(() => window.removeEventListener("beforeunload", warnUnsaved));
+
+async function loadConfig() {
+  if (draft.busy) return;
+  const path = draft.path;
+  update({busy: true, error: ""});
+  try {
+    const content = await invoke<string>("read_config", {path});
+    update({content, saved: content, loadedPath: path});
+  } catch (error) { update({error: String(error)}); }
+  finally { update({busy: false}); }
+}
+
+async function saveConfig() {
+  if (draft.busy || !draft.loadedPath) return;
+  const {loadedPath: path, content} = draft;
+  update({busy: true, error: ""});
+  try {
+    await invoke("write_config", {path, content});
+    update({saved: content});
+    toast.success("Configuration saved");
+  } catch (error) { update({error: String(error)}); }
+  finally { update({busy: false}); }
+}
 
 export default function Config() {
-  const [configPath, setConfigPath] = useState("/etc/burst/config.toml");
-  const [content, setContent] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const state = useSyncExternalStore(subscribe, () => draft);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const dirty = state.content !== state.saved;
+  useEffect(() => { if (!draft.loadedPath && !draft.busy) loadConfig(); }, []);
+  const loadButton = useRef<HTMLButtonElement>(null);
 
-  async function loadConfig() {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await invoke<string>("read_config", { path: configPath });
-      setContent(result);
-      setDirty(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveConfig() {
-    setSaving(true);
-    try {
-      await invoke("write_config", { path: configPath, content });
-      setDirty(false);
-      toast.success("Configuration saved");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  useEffect(() => {
-    loadConfig();
-  }, []);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 space-y-1.5">
-          <label className="text-sm font-medium">Config File Path</label>
-          <Input
-            value={configPath}
-            onChange={(e) => setConfigPath(e.target.value)}
-            className="font-mono"
-          />
-        </div>
-        <Button variant="outline" size="sm" onClick={loadConfig}>
-          <FolderOpen className="h-4 w-4" />
-          Load
-        </Button>
-        <Button
-          size="sm"
-          onClick={saveConfig}
-          disabled={saving || !dirty}
-        >
-          {saving ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
-          Save
-        </Button>
-      </div>
-
-      {error && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-destructive">{error}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium">
-            Configuration Editor
-            {dirty && (
-              <span className="ml-2 text-xs text-chart-4">(unsaved changes)</span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <Skeleton className="h-[500px] w-full" />
-          ) : (
-            <textarea
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value);
-                setDirty(true);
-              }}
-              spellCheck={false}
-              className="h-[500px] w-full resize-none rounded-md border border-input bg-background p-4 font-mono text-sm leading-relaxed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
+  return <div className="node-config">
+    <p className="field-help">Edits a file on this computer, not the remote RPC node. Saving does not restart the node.</p>
+    <form className="form-field" onSubmit={event => {event.preventDefault(); if (dirty) setDiscardOpen(true); else loadConfig();}}>
+      <label htmlFor="config-path">Config file path</label>
+      <div className="field-action"><Input id="config-path" value={state.path} onChange={event => update({path: event.target.value})} disabled={state.busy} spellCheck={false} autoComplete="off" /><Button ref={loadButton} type="submit" variant="secondary" disabled={state.busy || !state.path.trim()}>Load</Button></div>
+    </form>
+    {state.error && <p role="alert" className="field-error break-words">{state.error}</p>}
+    <section className="form-field">
+      <label htmlFor="config-contents">Configuration contents</label>
+      {state.loadedPath && <p id="config-save-path" className="field-help break-all">Editing and saving to <span className="font-mono select-text">{state.loadedPath}</span></p>}
+      {state.loadedPath && state.path !== state.loadedPath && <p className="text-caption text-warning">Load the new path to edit it. Save still applies to the file shown above.</p>}
+      <textarea id="config-contents" aria-describedby={state.loadedPath ? "config-save-path" : undefined} value={state.content} onChange={event => update({content:event.target.value})} onKeyDown={event => {if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && dirty) {event.preventDefault(); saveConfig();}}} disabled={state.busy || !state.loadedPath} spellCheck={false} autoComplete="off" className="form-control config-editor p-4 font-mono" />
+      <div className="config-footer"><p role="status" className="field-help">{state.busy ? "Working…" : dirty ? "Unsaved changes · kept while this app stays open" : "No unsaved changes"}</p><Button type="button" onClick={saveConfig} disabled={state.busy || !dirty || !state.loadedPath}>{state.busy && <Loader2 className="animate-spin" />}Save</Button></div>
+    </section>
+    <Dialog open={discardOpen} onOpenChange={setDiscardOpen}><DialogContent onCloseAutoFocus={event => {event.preventDefault(); requestAnimationFrame(() => {if (loadButton.current?.disabled) document.getElementById("main-content")?.focus(); else loadButton.current?.focus();});}}>
+      <DialogHeader><DialogTitle>Discard unsaved changes?</DialogTitle><DialogDescription>Loading this file will replace your current draft. Save it first if you want to keep it.</DialogDescription></DialogHeader>
+      <DialogFooter><Button variant="outline" onClick={() => setDiscardOpen(false)}>Keep editing</Button><Button onClick={() => {setDiscardOpen(false); loadConfig();}}>Discard and load</Button></DialogFooter>
+    </DialogContent></Dialog>
+  </div>;
 }

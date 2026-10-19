@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState, useRef } from "react";
+import { useRpc } from "@/hooks/use-rpc";
 import { RefreshCw, ArrowDownToLine, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,40 +37,15 @@ function logLevelColor(level: string | null): string {
 }
 
 export default function Logs() {
-  const [lines, setLines] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<LogLevel>("ALL");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lineCount, setLineCount] = useState(200);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  async function fetchLogs() {
-    setLoading(true);
-    try {
-      const result = await invoke<string[]>("read_logs", { lines: lineCount });
-      setLines(result);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    fetchLogs();
-  }, [lineCount]);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const id = setInterval(fetchLogs, 3000);
-    return () => clearInterval(id);
-  }, [autoRefresh, lineCount]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines]);
+  const { data, loading, error, refetch: fetchLogs } = useRpc<string[]>(
+    "read_logs", { lines: lineCount }, autoRefresh ? 3000 : undefined,
+  );
+  const lines = data ?? [];
 
   const filteredLines =
     filter === "ALL"
@@ -82,15 +57,16 @@ export default function Logs() {
 
   return (
     <div className="space-y-4">
+      <p className="text-caption text-muted-foreground">Local machine only: journal entries for the burst-node service. Changing the RPC endpoint does not switch this log source.</p>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {LOG_LEVELS.map((level) => (
             <Button
               key={level}
               variant={filter === level ? "default" : "outline"}
               size="sm"
               onClick={() => setFilter(level)}
-              className="text-xs"
+              className="text-caption"
             >
               {level}
             </Button>
@@ -98,14 +74,14 @@ export default function Logs() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <Badge variant="secondary" className="font-mono text-xs">
+          <Badge variant="secondary" className="font-mono text-caption">
             {filteredLines.length} lines
           </Badge>
           <Button
             variant="outline"
             size="icon"
             onClick={() => setAutoRefresh(!autoRefresh)}
-            title={autoRefresh ? "Pause auto-refresh" : "Resume auto-refresh"}
+            aria-label={autoRefresh ? "Pause auto-refresh" : "Resume auto-refresh"}
           >
             {autoRefresh ? (
               <Pause className="h-4 w-4" />
@@ -117,6 +93,7 @@ export default function Logs() {
             variant="outline"
             size="icon"
             onClick={fetchLogs}
+            aria-label="Refresh logs"
             disabled={loading}
           >
             <RefreshCw className={loading ? "animate-spin" : ""} />
@@ -124,8 +101,9 @@ export default function Logs() {
           <Button
             variant="outline"
             size="icon"
+            aria-label="Jump to latest logs"
             onClick={() =>
-              bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+              bottomRef.current?.scrollIntoView({ behavior: "instant" })
             }
           >
             <ArrowDownToLine className="h-4 w-4" />
@@ -143,7 +121,7 @@ export default function Logs() {
 
       <Card>
         <CardHeader className="py-3">
-          <CardTitle className="text-sm font-medium">
+          <CardTitle className="text-sm font-normal">
             Node Logs
             {autoRefresh && (
               <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-chart-2" />
@@ -151,14 +129,14 @@ export default function Logs() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-280px)]">
+          <ScrollArea className="h-[max(240px,calc(100dvh-360px))]">
             <div className="p-4">
               {filteredLines.length === 0 && !loading && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   No log entries
                 </p>
               )}
-              <pre className="text-xs leading-5">
+              <pre className="whitespace-pre-wrap break-all text-caption leading-5">
                 {filteredLines.map((line, i) => {
                   const level = getLogLevel(line);
                   return (

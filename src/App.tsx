@@ -1,23 +1,25 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/layout";
-import Overview from "@/pages/overview";
-import Parameters from "@/pages/parameters";
-import Peers from "@/pages/peers";
-import Explorer from "@/pages/explorer";
-import Verification from "@/pages/verification";
-import Governance from "@/pages/governance";
-import MergerGraph from "@/pages/merger-graph";
-import Config from "@/pages/config";
-import Logs from "@/pages/logs";
+import { PageBoundary } from "@/components/page-boundary";
+const Overview = lazy(() => import("@/pages/overview"));
+const Parameters = lazy(() => import("@/pages/parameters"));
+const Peers = lazy(() => import("@/pages/peers"));
+const Explorer = lazy(() => import("@/pages/explorer"));
+const Verification = lazy(() => import("@/pages/verification"));
+const Governance = lazy(() => import("@/pages/governance"));
+const MergerGraph = lazy(() => import("@/pages/merger-graph"));
+const Config = lazy(() => import("@/pages/config"));
+const Logs = lazy(() => import("@/pages/logs"));
 
 export default function App() {
   return (
     <BrowserRouter>
       <TooltipProvider delayDuration={300}>
         <Layout>
-          <Routes>
+          <PageBoundary><Suspense fallback={<div role="status" className="min-h-48 text-muted-foreground">Loading…</div>}><Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/parameters" element={<Parameters />} />
             <Route path="/peers" element={<Peers />} />
@@ -27,16 +29,17 @@ export default function App() {
             <Route path="/merger-graph" element={<MergerGraph />} />
             <Route path="/config" element={<Config />} />
             <Route path="/logs" element={<Logs />} />
-          </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes></Suspense></PageBoundary>
         </Layout>
         <Toaster
-          theme="dark"
           position="bottom-right"
+          mobileOffset={{ bottom: "calc(16px + env(safe-area-inset-bottom, 0px))", left: "calc(16px + env(safe-area-inset-left, 0px))", right: "calc(16px + env(safe-area-inset-right, 0px))" }}
           toastOptions={{
             style: {
-              background: "var(--card)",
-              border: "1px solid var(--border)",
-              color: "var(--foreground)",
+              background: "var(--color-card)",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-foreground)",
             },
           }}
         />

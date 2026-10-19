@@ -1,4 +1,6 @@
-import { Network, RefreshCw, Info } from "lucide-react";
+import { ContextHelp } from "@/components/context-help";
+import { MetricGroup, MetricItem } from "@/components/metric-group";
+import { Network, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,14 +9,16 @@ import { useRpc, useRpcUrl } from "@/hooks/use-rpc";
 import { formatTimestamp } from "@/lib/utils";
 import type { PeerList } from "@/lib/types";
 
-function offsetColor(ms: number): string {
+function offsetColor(ms: number | null): string {
+  if (ms === null) return "text-muted-foreground";
   const abs = Math.abs(ms);
   if (abs < 100) return "text-green-400";
   if (abs < 500) return "text-amber-400";
   return "text-red-400";
 }
 
-function SignalBars({ offsetMs }: { offsetMs: number }) {
+function SignalBars({ offsetMs }: { offsetMs: number | null }) {
+  if (offsetMs === null) return <span className="text-muted-foreground">—</span>;
   const abs = Math.abs(offsetMs);
   let bars = 4;
   if (abs > 2000) bars = 1;
@@ -28,7 +32,7 @@ function SignalBars({ offsetMs }: { offsetMs: number }) {
       {[1, 2, 3, 4].map((level) => (
         <div
           key={level}
-          className={`w-1 rounded-sm transition-all duration-300 ${
+          className={`w-1 rounded-sm transition-opacity duration-300 ${
             level <= bars ? barColor : "bg-muted"
           }`}
           style={{ height: `${level * 25}%` }}
@@ -38,7 +42,8 @@ function SignalBars({ offsetMs }: { offsetMs: number }) {
   );
 }
 
-function qualityLabel(offsetMs: number): { label: string; color: string } {
+function qualityLabel(offsetMs: number | null): { label: string; color: string } {
+  if (offsetMs === null) return { label:"Unknown", color:"text-muted-foreground" };
   const abs = Math.abs(offsetMs);
   if (abs < 100) return { label: "Excellent", color: "text-green-400" };
   if (abs < 500) return { label: "Good", color: "text-green-400" };
@@ -54,27 +59,15 @@ export default function Peers() {
     10000,
   );
 
-  const avgOffset =
-    data && data.peers.length > 0
-      ? Math.round(
-          data.peers.reduce((sum, p) => sum + Math.abs(p.clock_offset_ms), 0) /
-            data.peers.length,
-        )
-      : null;
-
-  const worstOffset =
-    data && data.peers.length > 0
-      ? data.peers.reduce(
-          (max, p) => Math.max(max, Math.abs(p.clock_offset_ms)),
-          0,
-        )
-      : null;
+  const offsets = (data?.peers ?? []).flatMap(p => p.clock_offset_ms === null ? [] : [Math.abs(p.clock_offset_ms)]);
+  const avgOffset = offsets.length ? Math.round(offsets.reduce((a,b)=>a+b,0)/offsets.length) : null;
+  const worstOffset = offsets.length ? Math.max(...offsets) : null;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold">Connected Peers</h2>
+          <h2 className="text-heading font-normal">Connected Peers</h2>
           {data && (
             <Badge variant="secondary" className="font-mono">
               {data.count}
@@ -93,42 +86,10 @@ export default function Peers() {
       </div>
 
       {data && data.peers.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Card className="animate-fade-in-up">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Peer Count
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold font-mono">{data.count}</p>
-            </CardContent>
-          </Card>
-          <Card className="animate-fade-in-up" style={{ animationDelay: "50ms" }}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Avg Clock Offset
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold font-mono ${avgOffset !== null ? offsetColor(avgOffset) : ""}`}>
-                {avgOffset !== null ? `${avgOffset}ms` : "\u2014"}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="animate-fade-in-up" style={{ animationDelay: "100ms" }}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Worst Clock Offset
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold font-mono ${worstOffset !== null ? offsetColor(worstOffset) : ""}`}>
-                {worstOffset !== null ? `${worstOffset}ms` : "\u2014"}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <MetricGroup aria-label="Peer summary">
+          <MetricItem label="Average clock offset">{avgOffset !== null ? `${avgOffset} ms` : "—"}</MetricItem>
+          <MetricItem label="Largest clock offset">{worstOffset !== null ? `${worstOffset} ms` : "—"}</MetricItem>
+        </MetricGroup>
       )}
 
       {error && (
@@ -159,19 +120,19 @@ export default function Peers() {
       {data && data.peers.length > 0 && (
         <Card className="animate-fade-in-up" style={{ animationDelay: "150ms" }}>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Peer List</CardTitle>
+            <CardTitle className="text-sm font-normal">Peer List</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 pr-4 font-medium">Address</th>
-                    <th className="pb-2 pr-4 font-medium">Version</th>
-                    <th className="pb-2 pr-4 font-medium">Clock Offset</th>
-                    <th className="pb-2 pr-4 font-medium">Quality</th>
-                    <th className="pb-2 pr-4 font-medium">Type</th>
-                    <th className="pb-2 font-medium">Last Seen</th>
+                  <tr className="border-b text-start text-caption text-muted-foreground">
+                    <th className="pb-2 pr-4 font-normal">Address</th>
+                    <th className="pb-2 pr-4 font-normal">Version</th>
+                    <th className="pb-2 pr-4 font-normal">Clock Offset</th>
+                    <th className="pb-2 pr-4 font-normal">Quality</th>
+                    <th className="pb-2 pr-4 font-normal">Type</th>
+                    <th className="pb-2 font-normal">Last Seen</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -179,30 +140,30 @@ export default function Peers() {
                     const quality = qualityLabel(peer.clock_offset_ms);
                     return (
                       <tr
-                        key={peer.node_id}
-                        className="transition-all duration-200 hover:bg-muted/50 hover:shadow-sm"
+                        key={peer.node_id || peer.address}
+                        className="transition-opacity duration-200 hover:bg-muted/50 hover:shadow-sm"
                       >
-                        <td className="py-2.5 pr-4 font-mono text-xs">
+                        <td className="py-2.5 pr-4 font-mono text-caption">
                           {peer.address}
                         </td>
-                        <td className="py-2.5 pr-4 font-mono text-xs">
-                          {peer.protocol_version}
+                        <td className="py-2.5 pr-4 font-mono text-caption">
+                          {peer.protocol_version ?? "—"}
                         </td>
-                        <td className={`py-2.5 pr-4 font-mono text-xs font-semibold ${offsetColor(peer.clock_offset_ms)}`}>
-                          {peer.clock_offset_ms}ms
+                        <td className={`py-2.5 pr-4 font-mono text-caption font-normal ${offsetColor(peer.clock_offset_ms)}`}>
+                          {peer.clock_offset_ms === null ? "—" : `${peer.clock_offset_ms}ms`}
                         </td>
                         <td className="py-2.5 pr-4">
                           <div className="flex items-center gap-2">
                             <SignalBars offsetMs={peer.clock_offset_ms} />
-                            <span className={`text-xs ${quality.color}`}>{quality.label}</span>
+                            <span className={`text-caption ${quality.color}`}>{quality.label}</span>
                           </div>
                         </td>
                         <td className="py-2.5 pr-4">
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="outline" className="text-caption">
                             {peer.connection_type}
                           </Badge>
                         </td>
-                        <td className="py-2.5 text-xs text-muted-foreground">
+                        <td className="py-2.5 text-caption text-muted-foreground">
                           {formatTimestamp(peer.last_seen)}
                         </td>
                       </tr>
@@ -215,18 +176,10 @@ export default function Peers() {
         </Card>
       )}
 
-      <div className="rounded-lg border-l-4 border-primary bg-muted/50 p-4 animate-fade-in-up" style={{ animationDelay: "200ms" }}>
-        <div className="flex items-start gap-3">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <div className="text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">Clock synchronization is critical for BRN computation.</p>
-            <p className="mt-1">
-              BRN is a function of time — <span className="font-mono">BRN = rate {"\u00D7"} (now {"\u2212"} verified_at) {"\u2212"} total_burned</span>.
-              Nodes must agree on the current time within acceptable margins for consistent BRN calculations across the network.
-            </p>
-          </div>
-        </div>
-      </div>
+      <ContextHelp summary="Why clock sync matters">
+        <p>BRN accrues with time. Nodes need synchronized clocks to calculate it consistently.</p>
+        <p className="font-mono text-caption">BRN = rate × (now − verified_at) − total_burned</p>
+      </ContextHelp>
     </div>
   );
 }

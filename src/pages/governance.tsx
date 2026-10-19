@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { Vote, ChevronRight, Info, BookOpen, Users } from "lucide-react";
+import { ContextHelp } from "@/components/context-help";
+import { Button } from "@/components/ui/button";
+import { useRef, useState } from "react";
+import { Vote, ChevronRight, BookOpen, Users } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -19,7 +21,6 @@ import {
 import { useRpc, useRpcUrl } from "@/hooks/use-rpc";
 import {
   formatTimestamp,
-  formatAmount,
   truncateHash,
   truncateAddress,
 } from "@/lib/utils";
@@ -40,7 +41,7 @@ const PHASE_COLORS: Record<string, string> = {
 
 function phaseBadge(phase: string) {
   const color = PHASE_COLORS[phase.toLowerCase()] ?? PHASE_COLORS.proposal;
-  return <Badge variant="outline" className={`text-xs ${color}`}>{phase}</Badge>;
+  return <Badge variant="outline" className={`text-caption ${color}`}>{phase}</Badge>;
 }
 
 function VoteBar({ yea, nay, abstain }: { yea: number; nay: number; abstain: number }) {
@@ -54,10 +55,10 @@ function VoteBar({ yea, nay, abstain }: { yea: number; nay: number; abstain: num
   return (
     <div className="space-y-1">
       <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
-        <div className="bg-green-500 transition-all" style={{ width: `${yeaPct}%` }} />
-        <div className="bg-red-500 transition-all" style={{ width: `${nayPct}%` }} />
+        <div className="bg-green-500 transition-opacity" style={{ width: `${yeaPct}%` }} />
+        <div className="bg-red-500 transition-opacity" style={{ width: `${nayPct}%` }} />
       </div>
-      <div className="flex justify-between text-[11px] text-muted-foreground font-mono">
+      <div className="flex justify-between text-caption text-muted-foreground font-mono">
         <span className="text-green-400">Yea: {yea.toLocaleString()} ({yeaPct.toFixed(1)}%)</span>
         <span className="text-red-400">Nay: {nay.toLocaleString()} ({nayPct.toFixed(1)}%)</span>
         <span>Abstain: {abstain.toLocaleString()}</span>
@@ -74,9 +75,9 @@ function Countdown({ deadline }: { deadline: number }) {
   const mins = Math.floor((remaining % 3600) / 60);
   if (hours > 24) {
     const days = Math.floor(hours / 24);
-    return <span className="font-mono text-xs">{days}d {hours % 24}h remaining</span>;
+    return <span className="font-mono text-caption">{days}d {hours % 24}h remaining</span>;
   }
-  return <span className="font-mono text-xs">{hours}h {mins}m remaining</span>;
+  return <span className="font-mono text-caption">{hours}h {mins}m remaining</span>;
 }
 
 function ProposalCard({
@@ -84,36 +85,35 @@ function ProposalCard({
   onClick,
 }: {
   proposal: Proposal;
-  onClick: () => void;
+  onClick: (trigger: HTMLButtonElement) => void;
 }) {
   return (
-    <Card
-      className="cursor-pointer transition-colors hover:bg-accent/50"
-      onClick={onClick}
+    <button
+      type="button"
+      className="surface-card w-full rounded-[var(--radius-card)] bg-card shadow-[var(--shadow-card)] text-start cursor-pointer hover:bg-accent/50"
+      onClick={event => onClick(event.currentTarget)}
     >
       <CardContent className="py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               {phaseBadge(proposal.phase)}
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="font-mono text-caption text-muted-foreground">
                 {truncateHash(proposal.hash)}
               </span>
               {proposal.param && (
-                <Badge variant="secondary" className="text-[10px]">
+                <Badge variant="secondary" className="text-caption">
                   {proposal.param} → {proposal.proposed_value}
                 </Badge>
               )}
             </div>
             <p className="text-sm">{proposal.description}</p>
-            <p className="font-mono text-xs text-muted-foreground">
+            <p className="font-mono text-caption text-muted-foreground">
               Proposer: {truncateAddress(proposal.proposer)}
             </p>
-            <VoteBar
-              yea={proposal.votes_yea}
-              nay={proposal.votes_nay}
-              abstain={proposal.votes_abstain}
-            />
+            <p className="text-caption text-muted-foreground tabular-nums">
+              Yea: {proposal.votes_yea.toLocaleString()} · Nay: {proposal.votes_nay.toLocaleString()}
+            </p>
             {proposal.phase_deadline > 0 && (
               <Countdown deadline={proposal.phase_deadline} />
             )}
@@ -121,23 +121,29 @@ function ProposalCard({
           <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
         </div>
       </CardContent>
-    </Card>
+    </button>
   );
 }
 
 export default function Governance() {
   const { rpcUrl } = useRpcUrl();
+  return <GovernanceAtNode key={rpcUrl} rpcUrl={rpcUrl} />;
+}
+
+function GovernanceAtNode({ rpcUrl }: { rpcUrl: string }) {
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const cursor = cursors[cursors.length - 1];
   const { data: proposals, loading: pLoading, error: pError } =
-    useRpc<ProposalList>("get_governance_proposals", { rpcUrl }, 30000);
+    useRpc<ProposalList>("get_governance_proposals", { rpcUrl, cursor }, 30000);
   const { data: consti, loading: cLoading, error: constiError } =
     useRpc<Consti>("get_consti", { rpcUrl }, 60000);
-  const { data: reps, loading: rLoading } =
+  const { data: reps, loading: rLoading, error: rError, refetch: retryReps } =
     useRpc<RepresentativeList>("get_representatives", { rpcUrl }, 30000);
 
+  const proposalTrigger = useRef<HTMLButtonElement | null>(null);
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
-  const selectedProposal = selectedHash
-    ? proposals?.proposals.find((p) => p.hash === selectedHash)
-    : null;
+  const { data: selectedProposal, loading: detailLoading, error: detailError, refetch: retryDetail } =
+    useRpc<Proposal>("get_governance_proposal_info", selectedHash ? { rpcUrl, hash: selectedHash } : null, 30000);
 
   return (
     <div className="space-y-6">
@@ -170,7 +176,7 @@ export default function Governance() {
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Vote className="mb-3 h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  No active proposals
+                  {cursor ? "No proposals on this page" : "No active proposals"}
                 </p>
               </CardContent>
             </Card>
@@ -182,25 +188,41 @@ export default function Governance() {
                 <ProposalCard
                   key={p.hash}
                   proposal={p}
-                  onClick={() => setSelectedHash(p.hash)}
+                  onClick={trigger => { proposalTrigger.current = trigger; setSelectedHash(p.hash); }}
                 />
               ))}
             </div>
           )}
 
+          {(cursors.length > 1 || proposals?.cursor) && (
+            <nav aria-label="Proposal pages" className="flex items-center justify-end gap-2">
+              <Button variant="outline" disabled={pLoading || cursors.length === 1}
+                onClick={() => setCursors(previous => previous.slice(0, -1))}>Previous</Button>
+              <span className="text-caption tabular-nums">Page {cursors.length}</span>
+              <Button variant="outline" disabled={pLoading || !!pError || !proposals?.cursor}
+                onClick={() => { if (proposals?.cursor) setCursors(previous => [...previous, proposals.cursor!]); }}>Next</Button>
+            </nav>
+          )}
+
           <Dialog
-            open={!!selectedProposal}
+            open={!!selectedHash}
             onOpenChange={(open) => {
               if (!open) setSelectedHash(null);
             }}
           >
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl" onCloseAutoFocus={event => { event.preventDefault(); proposalTrigger.current?.focus(); }}>
               <DialogHeader>
                 <DialogTitle>Proposal Detail</DialogTitle>
-                <DialogDescription className="font-mono text-xs break-all">
+                <DialogDescription className="font-mono text-caption break-all">
                   {selectedHash}
                 </DialogDescription>
               </DialogHeader>
+
+              {detailLoading && !selectedProposal && <p role="status">Loading proposal…</p>}
+              {detailError && <div role="alert" className="space-y-2">
+                <p className="text-sm text-destructive">{detailError}</p>
+                <Button variant="outline" onClick={retryDetail}>Retry</Button>
+              </div>}
 
               {selectedProposal && (
                 <div className="space-y-4">
@@ -216,7 +238,7 @@ export default function Governance() {
                   <dl className="grid gap-3 text-sm sm:grid-cols-2">
                     <div className="sm:col-span-2">
                       <dt className="text-muted-foreground">Proposer</dt>
-                      <dd className="mt-0.5 font-mono text-xs break-all">
+                      <dd className="mt-0.5 font-mono text-caption break-all">
                         {selectedProposal.proposer}
                       </dd>
                     </div>
@@ -266,7 +288,7 @@ export default function Governance() {
                 <p className="text-sm text-muted-foreground">
                   Consti (on-chain constitution) is not available on this node.
                 </p>
-                <p className="mt-2 text-xs text-muted-foreground/80">{constiError}</p>
+                <p className="mt-2 text-caption text-muted-foreground/80">{constiError}</p>
               </CardContent>
             </Card>
           )}
@@ -292,20 +314,20 @@ export default function Governance() {
 
           {consti && !constiError && consti.articles.length > 0 && (
             <>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Amendment threshold: <span className="font-mono">{consti.amendment_threshold}</span>
               </p>
               <div className="space-y-3">
                 {consti.articles.map((article) => (
                   <Card key={article.id}>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-base">{article.title}</CardTitle>
+                      <CardTitle className="text-heading">{article.title}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                         {article.text}
                       </p>
-                      <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
+                      <div className="mt-3 flex gap-4 text-caption text-muted-foreground">
                         <span>Adopted: {formatTimestamp(article.adopted_at)}</span>
                         {article.amended_at && (
                           <span>Last amended: {formatTimestamp(article.amended_at)}</span>
@@ -318,24 +340,14 @@ export default function Governance() {
             </>
           )}
 
-          <div className="rounded-lg border-l-4 border-primary bg-muted/50 p-4">
-            <div className="flex items-start gap-3">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <div className="text-sm text-muted-foreground">
-                <p className="font-medium text-foreground">
-                  The Consti is BURST's on-chain constitution.
-                </p>
-                <p className="mt-1">
-                  Governance that can't be reduced to numbers. It defines legitimacy, fraud,
-                  evidence standards, and participant rights. Articles can only be amended
-                  through the same democratic governance process as protocol parameters.
-                </p>
-              </div>
-            </div>
-          </div>
+          <ContextHelp summary="About the constitution">
+            <p>The Consti is BURST’s on-chain constitution. It defines legitimacy, fraud, evidence standards, and participant rights.</p>
+            <p>Articles are amended through the same democratic process as protocol parameters.</p>
+          </ContextHelp>
         </TabsContent>
 
         <TabsContent value="representatives" className="space-y-4">
+          {rError && <div role="alert" className="space-y-3 rounded-lg bg-muted p-4"><p>Representatives unavailable</p><p className="break-words text-caption text-muted-foreground">{rError}</p><Button variant="outline" onClick={retryReps} disabled={rLoading}>Try again</Button></div>}
           {rLoading && !reps && (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -361,11 +373,11 @@ export default function Governance() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="pb-2 pr-4 font-medium">#</th>
-                        <th className="pb-2 pr-4 font-medium">Account</th>
-                        <th className="pb-2 pr-4 font-medium">Weight</th>
-                        <th className="pb-2 font-medium">Delegators</th>
+                      <tr className="border-b text-start text-caption text-muted-foreground">
+                        <th className="pb-2 pr-4 font-normal">#</th>
+                        <th className="pb-2 pr-4 font-normal">Account</th>
+                        <th className="pb-2 pr-4 font-normal">Consensus weight (raw)</th>
+                        <th className="pb-2 font-normal">Verified people</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -373,16 +385,16 @@ export default function Governance() {
                         .sort((a, b) => Number(b.weight) - Number(a.weight))
                         .map((rep, i) => (
                           <tr key={rep.account} className="hover:bg-muted/50">
-                            <td className="py-2.5 pr-4 text-xs text-muted-foreground">
+                            <td className="py-2.5 pr-4 text-caption text-muted-foreground">
                               {i + 1}
                             </td>
-                            <td className="py-2.5 pr-4 font-mono text-xs">
+                            <td className="py-2.5 pr-4 font-mono text-caption">
                               {truncateAddress(rep.account)}
                             </td>
-                            <td className="py-2.5 pr-4 font-mono text-xs font-medium">
-                              {formatAmount(rep.weight)}
+                            <td className="py-2.5 pr-4 font-mono text-caption font-normal">
+                              {BigInt(rep.weight).toLocaleString()}
                             </td>
-                            <td className="py-2.5 font-mono text-xs">
+                            <td className="py-2.5 font-mono text-caption">
                               {rep.delegator_count.toLocaleString()}
                             </td>
                           </tr>

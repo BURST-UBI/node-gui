@@ -4,10 +4,12 @@ async fn rpc_call(url: &str, body: serde_json::Value) -> Result<serde_json::Valu
     let client = reqwest::Client::new();
     let resp = client
         .post(url)
+        .timeout(std::time::Duration::from_secs(10))
         .json(&body)
         .send()
         .await
         .map_err(|e| format!("RPC request failed: {e}"))?;
+    let resp = resp.error_for_status().map_err(|e| format!("RPC HTTP error: {e}"))?;
     let json: serde_json::Value = resp
         .json()
         .await
@@ -22,6 +24,10 @@ async fn rpc_call(url: &str, body: serde_json::Value) -> Result<serde_json::Valu
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Telemetry {
+    #[serde(default)]
+    pub network: Option<String>,
+    #[serde(default)]
+    pub faucet_enabled: bool,
     pub block_count: u64,
     pub account_count: u64,
     pub peer_count: u64,
@@ -38,7 +44,7 @@ pub struct Telemetry {
     #[serde(default)]
     pub trst_revoked_total: String,
     #[serde(default)]
-    pub ntp_offset_ms: i64,
+    pub ntp_offset_ms: Option<i64>,
 }
 
 #[tauri::command]
@@ -54,13 +60,13 @@ pub struct ProtocolParams {
     pub brn_rate: String,
     pub trst_expiry_secs: u64,
     pub endorsement_threshold: u32,
-    pub verification_threshold: u32,
+    pub verification_threshold: f64,
     pub endorsement_burn_amount: String,
     pub verifier_stake_amount: String,
     pub challenge_stake_amount: String,
     pub max_revotes: u32,
-    pub governance_quorum: String,
-    pub governance_supermajority: String,
+    pub governance_quorum: f64,
+    pub governance_supermajority: f64,
     pub governance_proposal_window_secs: u64,
     pub governance_voting_window_secs: u64,
     pub governance_cooldown_secs: u64,
@@ -84,11 +90,11 @@ pub async fn get_protocol_params(rpc_url: String) -> Result<ProtocolParams, Stri
 pub struct PeerInfo {
     pub address: String,
     #[serde(default)]
-    pub protocol_version: u64,
+    pub protocol_version: Option<u64>,
     #[serde(default)]
     pub node_id: String,
     #[serde(default)]
-    pub clock_offset_ms: i64,
+    pub clock_offset_ms: Option<i64>,
     #[serde(default)]
     pub last_seen: u64,
     #[serde(default)]
@@ -115,9 +121,9 @@ pub async fn get_peers(rpc_url: String) -> Result<PeerList, String> {
                     .filter_map(|p| {
                         p.as_str().map(|addr| PeerInfo {
                             address: addr.to_string(),
-                            protocol_version: 0,
+                            protocol_version: None,
                             node_id: String::new(),
-                            clock_offset_ms: 0,
+                            clock_offset_ms: None,
                             last_seen: 0,
                             connection_type: String::new(),
                         })
@@ -314,17 +320,48 @@ pub async fn get_verification_activity(rpc_url: String) -> Result<VerificationAc
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccountVerificationDetail {
     pub account: String,
-    pub status: String,
+    #[serde(alias = "status")]
+    pub state: String,
     pub verified_at: Option<u64>,
-    pub endorser_count: u32,
+    #[serde(alias = "endorser_count")]
+    pub endorsement_count: u32,
     pub challenge_active: bool,
-    /// Not returned by node; populated from endorsement_threshold param if available.
     #[serde(default)]
     pub endorsement_threshold: Option<u32>,
     #[serde(default)]
     pub endorsers: Vec<String>,
     #[serde(default)]
     pub verifier_votes: Vec<VerifierVoteEntry>,
+    #[serde(default)]
+    pub selection_available: Option<bool>,
+}
+
+#[cfg(test)]
+mod verification_contract_tests {
+    use super::AccountVerificationDetail;
+
+    #[test]
+    fn node_verification_fields_match_the_frontend_contract() {
+        for capability in [Some(false), Some(true), None] {
+            let mut rpc = serde_json::json!({
+                "account": "fixture", "status": "verified", "verified_at": 10,
+                "endorser_count": 3, "endorsement_threshold": 3, "challenge_active": false,
+            });
+            if let Some(available) = capability {
+                rpc["selection_available"] = available.into();
+            }
+            let detail: AccountVerificationDetail = serde_json::from_value(rpc).unwrap();
+            let ipc = serde_json::to_value(detail).unwrap();
+            assert_eq!(ipc["state"], "verified");
+            assert_eq!(ipc["endorsement_count"], 3);
+            assert_eq!(ipc["endorsement_threshold"], 3);
+            assert_eq!(ipc["selection_available"], serde_json::json!(capability));
+            assert_eq!(ipc["endorsers"], serde_json::json!([]));
+            assert_eq!(ipc["verifier_votes"], serde_json::json!([]));
+            assert!(ipc.get("status").is_none());
+            assert!(ipc.get("endorser_count").is_none());
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -379,9 +416,9 @@ pub struct ProposalList {
 }
 
 #[tauri::command]
-pub async fn get_governance_proposals(rpc_url: String) -> Result<ProposalList, String> {
+pub async fn get_governance_proposals(rpc_url: String, cursor: Option<String>) -> Result<ProposalList, String> {
     let result =
-        rpc_call(&rpc_url, serde_json::json!({"action": "governance_proposals"})).await?;
+        rpc_call(&rpc_url, serde_json::json!({"action": "governance_proposals", "cursor": cursor})).await?;
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
@@ -405,7 +442,7 @@ pub struct ConstiArticle {
     pub id: String,
     pub title: String,
     pub text: String,
-    pub adopted_at: u64,
+    pub adopted_at: Option<u64>,
     #[serde(default)]
     pub amended_at: Option<u64>,
 }
@@ -455,7 +492,7 @@ pub struct OriginTrace {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MergeEntry {
     pub merge_hash: String,
-    pub holder: String,
+    pub holder: Option<String>,
     pub amount: String,
     pub timestamp: u64,
 }
@@ -521,6 +558,9 @@ pub async fn read_logs(lines: u32) -> Result<Vec<String>, String> {
         .output()
         .await
         .map_err(|e| format!("Failed to read logs: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("Local journal unavailable: {}", String::from_utf8_lossy(&output.stderr)));
+    }
     let text = String::from_utf8_lossy(&output.stdout);
     Ok(text.lines().map(|l| l.to_string()).collect())
 }
