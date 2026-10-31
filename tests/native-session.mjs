@@ -64,6 +64,18 @@ try {
     await new Promise(resolveWait => setTimeout(resolveWait, 100));
   }
   assert(loaded, `Native app did not render with IPC; see ${evidence}`);
+  if (process.argv.includes('--embedded') || process.env.NATIVE_EMBEDDED === '1') {
+    const { checkSecurity } = await import('./native-security.mjs');
+    await checkSecurity(async (script, args = [], asynchronous = false) => {
+      const response = await fetch(`${server}/session/${session}/execute/${asynchronous ? 'async' : 'sync'}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script, args }), signal: AbortSignal.timeout(15000),
+      });
+      const { value } = await response.json();
+      assert(response.ok && !value?.error, JSON.stringify(value));
+      return value;
+    });
+  }
   for (const test of ['native-rpc.mjs', 'native-dashboard.mjs']) {
     const child = spawn(process.execPath, [resolve(root, 'tests', test)], {
       cwd: root, env: { ...env, WEBDRIVER_SESSION: session }, stdio: 'inherit',
