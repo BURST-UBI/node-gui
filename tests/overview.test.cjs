@@ -77,7 +77,7 @@ test('overview separates labels from values and puts secondary readings in an ac
     await page.getByRole('heading',{name:'Your node is isolated',exact:true}).waitFor();
     assert.equal(await page.getByText('No peers connected',{exact:true}).count(),0);
     assert.equal(await page.locator('.metric-group:visible').count(),1);
-    assert.equal(await page.locator('.metric-group .metric-row').count(),8);
+    assert.equal(await page.locator('.metric-group .metric-row').count(),9);
     assert.ok((await page.locator('.overview-summary').boundingBox()).height <= 98,'compact summary, not four rows of details');
     const rows=await page.locator('.overview-summary .metric-row').evaluateAll(rows=>rows.map(row=>{
       const style=getComputedStyle(row),label=row.querySelector('dt'),value=row.querySelector('dd');return {height:row.getBoundingClientRect().height,left:style.borderLeftWidth,gap:value.getBoundingClientRect().top-label.getBoundingClientRect().bottom,labelSize:getComputedStyle(label).fontSize,valueSize:getComputedStyle(value).fontSize,labelColor:getComputedStyle(label).color,valueColor:getComputedStyle(value).color};
@@ -100,7 +100,7 @@ test('overview separates labels from values and puts secondary readings in an ac
     await page.keyboard.press('Enter');
     await page.getByText('No expiry',{exact:true}).waitFor();
     await page.getByText('-841 ms',{exact:true}).waitFor();
-    await page.getByText('Acceptable',{exact:true}).waitFor();
+    await page.getByText('Not reported by this node',{exact:true}).waitFor();
     for(const icon of await page.locator('.metric-group [data-burst-icon]').all()) {
       const size=await icon.boundingBox();assert.equal(size.width,28);assert.equal(size.height,28);
     }
@@ -117,7 +117,7 @@ test('overview separates labels from values and puts secondary readings in an ac
     for(const width of [800,500,320]) {
       await page.setViewportSize({width,height:800});
       assert.equal(await page.locator('main').evaluate(el => el.scrollWidth <= el.clientWidth),true,'overflow at '+width);
-      assert.equal(await page.locator('.metric-group .metric-row').count(),8);
+      assert.equal(await page.locator('.metric-group .metric-row').count(),9);
       const values=await page.locator('.overview-detail-values dd').evaluateAll(values=>values.map(value=>value.getBoundingClientRect().left));
       assert.ok(values.every(left=>left === values[0]),'details share a value alignment rail at '+width);
       const labels=await page.locator('.overview-summary .metric-row').evaluateAll(rows=>rows.map(row=>({label:row.querySelector('dt').getBoundingClientRect().bottom,value:row.querySelector('dd').getBoundingClientRect().top})));
@@ -161,12 +161,12 @@ test('overview keeps clock problems visible and long readings contained while de
       window.isTauri=true;
       window.__TAURI_INTERNALS__={invoke:async command => {
         if(command === 'get_protocol_params') return {brn_rate:'277777777777777',trst_expiry_secs:86400};
-        if(command === 'get_telemetry') return {network:'test',block_count:1234567890123,account_count:9876543210,peer_count:250,protocol_version:1,uptime_secs:86400000,verified_count:9876543210,unverified_count:0,trst_circulating:'3000000000000000000',trst_expired_total:'0',trst_revoked_total:'0',ntp_offset_ms:2501};
+        if(command === 'get_telemetry') return {network:'test',block_count:1234567890123,account_count:9876543210,peer_count:250,protocol_version:1,uptime_secs:86400000,verified_count:9876543210,unverified_count:0,trst_circulating:'3000000000000000000',trst_expired_total:'0',trst_revoked_total:'0',ntp_offset_ms:2501,signing_clock:{status:'unavailable',reason:'authenticated time unavailable'}};
         throw new Error('Unexpected fixture command: '+command);
       }};
     });
     await page.goto(baseUrl);
-    await page.getByText('Clock offset 2501 ms — Poor synchronization',{exact:true}).waitFor();
+    await page.getByText('Time-dependent signing is paused: authenticated time unavailable.',{exact:true}).waitFor();
     assert.equal(await page.locator('.overview-details').getAttribute('open'),null);
     for(const width of [320,500,800,1200]) {
       await page.setViewportSize({width,height:900});
@@ -176,7 +176,8 @@ test('overview keeps clock problems visible and long readings contained while de
     }
     await page.setViewportSize({width:320,height:800});
     await page.locator('.overview-details > summary').click();
-    await page.getByText('Poor',{exact:true}).waitFor();
+    await page.getByText('Unavailable',{exact:true}).waitFor();
+    await page.getByText('2501 ms',{exact:true}).waitFor();
     assert.equal(await page.locator('main').evaluate(el=>el.scrollWidth <= el.clientWidth),true);
   } finally {await page.close();}
 });
@@ -472,6 +473,7 @@ test('protocol parameter failure is explicit while telemetry remains available',
           peer_count: 0, protocol_version: 1, uptime_secs: 30, verified_count: 1,
           unverified_count: 1, trst_circulating: '0', trst_expired_total: '0',
           trst_revoked_total: '0', ntp_offset_ms: null,
+          signing_clock: {status:'unavailable',reason:'no authenticated time sample'},
         };
         throw new Error('Unexpected fixture command: ' + command);
       } };
@@ -480,7 +482,7 @@ test('protocol parameter failure is explicit while telemetry remains available',
     await page.getByText('42', { exact: true }).waitFor();
     assert.equal(await page.getByText('Parameters unavailable. Retrying…', { exact: true }).count(), 2);
     await page.getByRole('heading',{name:'Your node is isolated',exact:true}).waitFor();
-    await page.locator('.overview-notices').getByText('No recent successful clock synchronization', { exact: true }).waitFor();
+    await page.locator('.overview-notices').getByText('Time-dependent signing is paused: no authenticated time sample.', { exact: true }).waitFor();
     await page.getByText('Network parameters unavailable. Retrying…', { exact: true }).waitFor();
   } finally { await page.close(); }
 });
