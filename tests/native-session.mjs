@@ -91,7 +91,10 @@ try {
       return value;
     });
   }
-  for (const test of ['native-rpc.mjs', 'native-concurrent-reads.mjs', 'native-dashboard.mjs']) {
+  const tests = process.argv.includes('--dashboard-only')
+    ? ['native-dashboard.mjs']
+    : ['native-rpc.mjs', 'native-concurrent-reads.mjs', 'native-dashboard.mjs'];
+  for (const test of tests) {
     const child = spawn(process.execPath, [resolve(root, 'tests', test)], {
       cwd: root, env: { ...env, WEBDRIVER_SESSION: session }, stdio: 'inherit',
     });

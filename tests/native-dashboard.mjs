@@ -85,7 +85,7 @@ const verificationDetails = await script(`return document.querySelector('[role="
 assert.match(verificationDetails,/0\s*\/\s*\d+/);
 assertSelection(verificationDetails);
 await click('Close');
-await wait(`!document.querySelector('[role="dialog"]')`);
+await wait(`!document.querySelector('[role="dialog"]') && document.activeElement?.textContent.trim() === 'View Verification Details'`);
 assert.equal(await script(`return document.activeElement?.textContent.trim()`),'View Verification Details');
 console.log('PASS native explorer verification dialog and restored keyboard focus');
 await page('/logs','Local machine only:');
