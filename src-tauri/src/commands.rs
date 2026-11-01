@@ -1,26 +1,42 @@
 use serde::{Deserialize, Serialize};
 
 async fn rpc_call(url: &str, body: serde_json::Value) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(url)
-        .timeout(std::time::Duration::from_secs(10))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("RPC request failed: {e}"))?;
-    let resp = resp.error_for_status().map_err(|e| format!("RPC HTTP error: {e}"))?;
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Invalid JSON response: {e}"))?;
-    if let Some(err) = json.get("error").and_then(|e| e.as_str()) {
-        return Err(format!("Node error: {err}"));
-    }
-    Ok(json.get("result").cloned().unwrap_or(json))
+    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(reqwest::Client::new);
+    let client = &*CLIENT;
+    // These dashboard commands only read state. Recover brief admission rejection
+    // without extending the existing request deadline or retrying other failures.
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        for attempt in 0..4 {
+            let resp = client
+                .post(url)
+                .timeout(std::time::Duration::from_secs(10))
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("RPC request failed: {e}"))?;
+            let http_limited = resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS;
+            let result = async {
+                let resp = resp.error_for_status().map_err(|e| format!("RPC HTTP error: {e}"))?;
+                let json = burst_http_client::read_json(resp).await?;
+                if let Some(err) = json.get("error").and_then(|e| e.as_str()) {
+                    return Err(format!("Node error: {err}"));
+                }
+                Ok(json.get("result").cloned().unwrap_or(json))
+            }.await;
+            let node_limited = matches!(&result, Err(error) if error == "Node error: rate limited");
+            if attempt == 3 || !(http_limited || node_limited) {
+                return result;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50 << attempt)).await;
+        }
+        unreachable!("the final attempt returns its result")
+    }).await.map_err(|_| "RPC request timed out".to_string())?
 }
 
-// ── Network overview ────────────────────────────────────────────────────
+#[cfg(test)]
+mod rpc_retry_tests;
+
+// Network overview
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Telemetry {
@@ -53,7 +69,7 @@ pub async fn get_telemetry(rpc_url: String) -> Result<Telemetry, String> {
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Protocol parameters ─────────────────────────────────────────────────
+// Protocol parameters
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProtocolParams {
@@ -84,7 +100,7 @@ pub async fn get_protocol_params(rpc_url: String) -> Result<ProtocolParams, Stri
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Peers with clock sync ───────────────────────────────────────────────
+// Peers with clock sync
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PeerInfo {
@@ -138,7 +154,7 @@ pub async fn get_peers(rpc_url: String) -> Result<PeerList, String> {
     }
 }
 
-// ── Block explorer ──────────────────────────────────────────────────────
+// Block explorer
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BlockInfo {
@@ -266,7 +282,7 @@ pub async fn get_account_history(
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Verification network activity ───────────────────────────────────────
+// Verification network activity
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerificationActivity {
@@ -316,7 +332,6 @@ pub async fn get_verification_activity(rpc_url: String) -> Result<VerificationAc
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-/// Matches the actual RPC response from verification_status.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccountVerificationDetail {
     pub account: String,
@@ -384,7 +399,7 @@ pub async fn get_account_verification(
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Governance ──────────────────────────────────────────────────────────
+// Governance
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Proposal {
@@ -435,10 +450,10 @@ pub async fn get_governance_proposal_info(
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Consti (on-chain constitution) ──────────────────────────────────────
+// Constitution (on-chain constitution)
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ConstiArticle {
+pub struct ConstitutionArticle {
     pub id: String,
     pub title: String,
     pub text: String,
@@ -448,18 +463,18 @@ pub struct ConstiArticle {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Consti {
-    pub articles: Vec<ConstiArticle>,
+pub struct Constitution {
+    pub articles: Vec<ConstitutionArticle>,
     pub amendment_threshold: String,
 }
 
 #[tauri::command]
-pub async fn get_consti(rpc_url: String) -> Result<Consti, String> {
+pub async fn get_consti(rpc_url: String) -> Result<Constitution, String> {
     let result = rpc_call(&rpc_url, serde_json::json!({"action": "consti"})).await?;
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Merger Graph ────────────────────────────────────────────────────────
+// Merger Graph
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MergerGraphStats {
@@ -507,7 +522,7 @@ pub async fn trace_origin(rpc_url: String, origin: String) -> Result<OriginTrace
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Representatives ─────────────────────────────────────────────────────
+// Representatives
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Representative {
@@ -528,7 +543,7 @@ pub async fn get_representatives(rpc_url: String) -> Result<RepresentativeList, 
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Config & Logs ───────────────────────────────────────────────────────
+// Config & Logs
 
 #[tauri::command]
 pub async fn read_config(path: String) -> Result<String, String> {

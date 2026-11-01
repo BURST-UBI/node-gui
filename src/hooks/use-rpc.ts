@@ -30,7 +30,7 @@ interface UseRpcResult<T> {
 export function useRpc<T>(
   command: string,
   params: Record<string, unknown> | null,
-  interval?: number,
+  pollIntervalMs?: number,
 ): UseRpcResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(params !== null);
@@ -42,15 +42,15 @@ export function useRpc<T>(
   const mounted = useRef(false);
   const inFlight = useRef<number | null>(null);
 
-  const fetchData = useCallback(async () => {
-    const p = paramsRef.current;
-    if (!p || !mounted.current || inFlight.current !== null) return;
+  const refetch = useCallback(async () => {
+    const requestParams = paramsRef.current;
+    if (!requestParams || !mounted.current || inFlight.current !== null) return;
     const id = ++requestId.current;
     inFlight.current = id;
     setLoading(true);
     try {
       if (!isTauri()) throw new Error("This dashboard uses the desktop runtime. Start it with npm run tauri dev; npm run dev is a visual preview only.");
-      const result = await invoke<T>(command, p);
+      const result = await invoke<T>(command, requestParams);
       if (!mounted.current || id !== requestId.current) return;
       setData(result);
       setError(null);
@@ -70,16 +70,16 @@ export function useRpc<T>(
     if (!paramsRef.current) {
       setLoading(false);
     } else {
-      fetchData();
+      refetch();
     }
-    const timer = paramsRef.current && interval && interval > 0 ? setInterval(fetchData, interval) : undefined;
+    const timer = paramsRef.current && pollIntervalMs && pollIntervalMs > 0 ? setInterval(refetch, pollIntervalMs) : undefined;
     return () => {
       mounted.current = false;
       ++requestId.current;
       inFlight.current = null;
       clearInterval(timer);
     };
-  }, [fetchData, interval]);
+  }, [refetch, pollIntervalMs]);
 
-  return { data, loading, error, refetch: fetchData };
+  return { data, loading, error, refetch };
 }

@@ -27,13 +27,13 @@ import {
 import type {
   ProposalList,
   Proposal,
-  Consti,
+  Constitution,
   RepresentativeList,
 } from "@/lib/types";
 
 const PHASE_COLORS: Record<string, string> = {
   proposal: "border-zinc-500/50 bg-zinc-500/10 text-zinc-400",
-  voting: "border-blue-500/50 bg-blue-500/10 text-blue-400",
+  voting: "border-blue-500/50 bg-blue-500/10 text-primary",
   cooldown: "border-amber-500/50 bg-amber-500/10 text-amber-400",
   activated: "border-green-500/50 bg-green-500/10 text-green-400",
   rejected: "border-red-500/50 bg-red-500/10 text-red-400",
@@ -133,11 +133,11 @@ export default function Governance() {
 function GovernanceAtNode({ rpcUrl }: { rpcUrl: string }) {
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const cursor = cursors[cursors.length - 1];
-  const { data: proposals, loading: pLoading, error: pError } =
+  const { data: proposals, loading: proposalsLoading, error: proposalsError } =
     useRpc<ProposalList>("get_governance_proposals", { rpcUrl, cursor }, 30000);
-  const { data: consti, loading: cLoading, error: constiError } =
-    useRpc<Consti>("get_consti", { rpcUrl }, 60000);
-  const { data: reps, loading: rLoading, error: rError, refetch: retryReps } =
+  const { data: consti, loading: constitutionLoading, error: constiError } =
+    useRpc<Constitution>("get_consti", { rpcUrl }, 60000);
+  const { data: reps, loading: representativesLoading, error: representativesError, refetch: retryReps } =
     useRpc<RepresentativeList>("get_representatives", { rpcUrl }, 30000);
 
   const proposalTrigger = useRef<HTMLButtonElement | null>(null);
@@ -155,15 +155,15 @@ function GovernanceAtNode({ rpcUrl }: { rpcUrl: string }) {
         </TabsList>
 
         <TabsContent value="proposals" className="space-y-4">
-          {pError && (
+          {proposalsError && (
             <Card>
               <CardContent className="pt-6">
-                <p className="text-sm text-destructive">{pError}</p>
+                <p className="text-sm text-destructive">{proposalsError}</p>
               </CardContent>
             </Card>
           )}
 
-          {pLoading && !proposals && (
+          {proposalsLoading && !proposals && (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-36 w-full" />
@@ -196,10 +196,10 @@ function GovernanceAtNode({ rpcUrl }: { rpcUrl: string }) {
 
           {(cursors.length > 1 || proposals?.cursor) && (
             <nav aria-label="Proposal pages" className="flex items-center justify-end gap-2">
-              <Button variant="outline" disabled={pLoading || cursors.length === 1}
+              <Button variant="outline" disabled={proposalsLoading || cursors.length === 1}
                 onClick={() => setCursors(previous => previous.slice(0, -1))}>Previous</Button>
               <span className="text-caption tabular-nums">Page {cursors.length}</span>
-              <Button variant="outline" disabled={pLoading || !!pError || !proposals?.cursor}
+              <Button variant="outline" disabled={proposalsLoading || !!proposalsError || !proposals?.cursor}
                 onClick={() => { if (proposals?.cursor) setCursors(previous => [...previous, proposals.cursor!]); }}>Next</Button>
             </nav>
           )}
@@ -293,7 +293,7 @@ function GovernanceAtNode({ rpcUrl }: { rpcUrl: string }) {
             </Card>
           )}
 
-          {cLoading && !consti && !constiError && (
+          {constitutionLoading && !consti && !constiError && (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-32 w-full" />
@@ -347,8 +347,8 @@ function GovernanceAtNode({ rpcUrl }: { rpcUrl: string }) {
         </TabsContent>
 
         <TabsContent value="representatives" className="space-y-4">
-          {rError && <div role="alert" className="space-y-3 rounded-lg bg-muted p-4"><p>Representatives unavailable</p><p className="break-words text-caption text-muted-foreground">{rError}</p><Button variant="outline" onClick={retryReps} disabled={rLoading}>Try again</Button></div>}
-          {rLoading && !reps && (
+          {representativesError && <div role="alert" className="space-y-3 rounded-lg bg-muted p-4"><p>Representatives unavailable</p><p className="break-words text-caption text-muted-foreground">{representativesError}</p><Button variant="outline" onClick={retryReps} disabled={representativesLoading}>Try again</Button></div>}
+          {representativesLoading && !reps && (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />

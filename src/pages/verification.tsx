@@ -29,7 +29,7 @@ function resultBadge(result: string) {
 function statusBadge(status: string) {
   const lower = status.toLowerCase();
   if (lower === "active")
-    return <Badge variant="outline" className="border-blue-500/50 bg-blue-500/10 text-blue-400 text-caption">{status}</Badge>;
+    return <Badge variant="outline" className="border-blue-500/50 bg-blue-500/10 text-primary text-caption">{status}</Badge>;
   if (lower === "succeeded")
     return <Badge variant="outline" className="border-green-500/50 bg-green-500/10 text-green-400 text-caption">{status}</Badge>;
   if (lower === "failed")
@@ -45,18 +45,18 @@ export default function Verification() {
     15000,
   );
 
-  const [lookupAddr, setLookupAddr] = useState("");
-  const [activeAddr, setActiveAddr] = useState<string | null>(null);
-  const accountVerif = useRpc<AccountVerification>(
+  const [accountInput, setAccountInput] = useState("");
+  const [queriedAccount, setQueriedAccount] = useState<string | null>(null);
+  const accountVerification = useRpc<AccountVerification>(
     "get_account_verification",
-    activeAddr ? { rpcUrl, account: activeAddr } : null,
+    queriedAccount ? { rpcUrl, account: queriedAccount } : null,
   );
 
   function handleLookup(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = lookupAddr.trim();
-    if (trimmed === activeAddr) accountVerif.refetch();
-    if (trimmed) setActiveAddr(trimmed);
+    const trimmed = accountInput.trim();
+    if (trimmed === queriedAccount) accountVerification.refetch();
+    if (trimmed) setQueriedAccount(trimmed);
   }
 
   if (error) {
@@ -102,84 +102,84 @@ export default function Verification() {
             <Input
               id="verification-account"
               aria-label="Account address"
-              value={lookupAddr}
-              onChange={(e) => setLookupAddr(e.target.value)}
+              value={accountInput}
+              onChange={(e) => setAccountInput(e.target.value)}
               placeholder="brst_…"
               spellCheck={false}
               autoComplete="off"
             />
-            <Button type="submit" variant="secondary" disabled={!lookupAddr.trim() || accountVerif.loading}>
+            <Button type="submit" variant="secondary" disabled={!accountInput.trim() || accountVerification.loading}>
               Check
             </Button>
           </div>
         </form>
 
-        {accountVerif.loading && (
+        {accountVerification.loading && (
           <div className="mt-4 space-y-2">
             <Skeleton className="h-6 w-32" />
             <Skeleton className="h-24 w-full" />
           </div>
         )}
 
-        {accountVerif.error && (
+        {accountVerification.error && (
           <p className="mt-4 text-sm text-muted-foreground">
-            Verification lookup failed. {accountVerif.error}
+            Verification lookup failed. {accountVerification.error}
           </p>
         )}
 
-        {accountVerif.data && (
+        {accountVerification.data && (
           <div className="mt-4 rounded-md border p-4 space-y-3">
             <div className="flex flex-wrap items-center gap-3">
               <ShieldCheck className="h-4 w-4 text-muted-foreground" />
               <span className="font-mono text-caption break-all">
-                {accountVerif.data.account}
+                {accountVerification.data.account}
               </span>
               <Badge
                 variant="outline"
                 className={`text-caption ${
-                  accountVerif.data.state.toLowerCase() === "verified"
+                  accountVerification.data.state.toLowerCase() === "verified"
                     ? "border-green-500/50 bg-green-500/10 text-green-400"
-                    : accountVerif.data.state.toLowerCase() === "revoked"
+                    : accountVerification.data.state.toLowerCase() === "revoked"
                       ? "border-red-500/50 bg-red-500/10 text-red-400"
                       : ""
                 }`}
               >
-                {accountVerif.data.state}
+                {accountVerification.data.state}
               </Badge>
-              {accountVerif.data.challenge_active && (
+              {accountVerification.data.challenge_active && (
                 <Badge variant="outline" className="border-red-500/40 text-red-400 text-caption">
                   Challenge Active
                 </Badge>
               )}
             </div>
 
-            {accountVerif.data.selection_available !== true && <p role="status" className="text-ui text-muted-foreground">{accountVerif.data.selection_available === false ? "Verifier selection is paused on this node." : "This node hasn't reported verifier-selection availability."}</p>}
+            {accountVerification.data.selection_available !== true && <p role="status" className="text-ui text-muted-foreground">{accountVerification.data.selection_available === false ? "Verifier selection is paused on this node." : "This node hasn't reported verifier-selection availability."}</p>}
             <dl className="grid gap-2 text-sm sm:grid-cols-3">
               <div>
                 <dt className="text-muted-foreground text-caption">Endorsements</dt>
                 <dd className="font-mono">
-                  {accountVerif.data.endorsement_count} / {accountVerif.data.endorsement_threshold ?? "—"}
+                  {accountVerification.data.endorsement_count} / {accountVerification.data.endorsement_threshold ?? "—"}
                 </dd>
               </div>
-              {accountVerif.data.verified_at && (
+              {accountVerification.data.verified_at && (
                 <div>
                   <dt className="text-muted-foreground text-caption">Verified At</dt>
                   <dd className="font-mono text-caption">
-                    {formatTimestamp(accountVerif.data.verified_at)}
+                    {formatTimestamp(accountVerification.data.verified_at)}
                   </dd>
                 </div>
               )}
               <div>
                 <dt className="text-muted-foreground text-caption">Verifier Votes</dt>
-                <dd className="font-mono">{accountVerif.data.verifier_votes.length}</dd>
+                <dd className="font-mono">{accountVerification.data.verifier_votes.length}</dd>
               </div>
             </dl>
 
-            {accountVerif.data.endorsers.length > 0 && (
+            {accountVerification.data.endorsers.length > 0 && (
               <div>
                 <p className="mb-1 text-caption font-normal text-muted-foreground">Endorsers</p>
                 <div className="flex flex-wrap gap-1">
-                  {accountVerif.data.endorsers.map((e) => (
+                  {accountVerification.data.endorsers.map((e) => (
                     <span key={e} className="rounded bg-muted px-1.5 py-0.5 font-mono text-caption">
                       <Identifier value={e} />
                     </span>
@@ -188,11 +188,11 @@ export default function Verification() {
               </div>
             )}
 
-            {accountVerif.data.verifier_votes.length > 0 && (
+            {accountVerification.data.verifier_votes.length > 0 && (
               <div>
                 <p className="mb-1 text-caption font-normal text-muted-foreground">Votes</p>
                 <div className="space-y-1">
-                  {accountVerif.data.verifier_votes.map((v) => (
+                  {accountVerification.data.verifier_votes.map((v) => (
                     <div key={v.verifier} className="flex items-center justify-between text-caption">
                       <span className="font-mono text-muted-foreground">
                         <Identifier value={v.verifier} />

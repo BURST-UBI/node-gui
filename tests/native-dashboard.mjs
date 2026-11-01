@@ -1,6 +1,8 @@
-// Real Tauri/WebKit navigation against a disposable node, without mocked IPC.
+// Real Tauri/WebDriver navigation against a disposable node, without mocked IPC.
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 assert(process.env.WEBDRIVER_SESSION, 'Provide a running native test session');
 const base = `http://127.0.0.1:4446/session/${process.env.WEBDRIVER_SESSION}`;
 const rpcUrl = process.env.NODE_RPC_URL || 'http://127.0.0.1:29077';
@@ -53,7 +55,7 @@ const {value:telemetry} = await (await fetch(`${base}/execute/async`,{method:'PO
 assert(!telemetry.error); assert(telemetry.block_count>0);
 assert((await script(`return document.querySelector('main').innerText`)).includes(telemetry.block_count.toLocaleString()));
 const screenshot=await (await fetch(`${base}/screenshot`)).json();
-await writeFile('/tmp/burst-native-node-dashboard.png',Buffer.from(screenshot.value,'base64'));
+await writeFile(join(process.env.NATIVE_EVIDENCE || tmpdir(), 'burst-native-node-dashboard.png'),Buffer.from(screenshot.value,'base64'));
 await page('/parameters','BRN Accrual Rate');
 await page('/peers','Connected Peers');
 const peers = await script(`return document.querySelector('main').innerText`);

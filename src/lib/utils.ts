@@ -18,9 +18,8 @@ export function formatUptime(secs: number): string {
   return `${minutes}m`;
 }
 
-// Protocol raw units are u128 with 1 BRN/TRST = 10^18 raw. u128 exceeds
-// Number's 2^53 safe-integer range, so format with pure string math —
-// Number(raw) silently corrupts anything above ~0.009 tokens.
+// One BRN/TRST is 10^18 raw units. Format the decimal string directly because
+// JavaScript numbers cannot represent every integer above 2^53 - 1.
 export function formatAmount(raw: string): string {
   if (!raw || !/^\d+$/.test(raw)) return raw || "0";
   const padded = raw.padStart(19, "0");

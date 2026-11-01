@@ -12,6 +12,11 @@ export interface Telemetry {
   trst_expired_total: string;
   trst_revoked_total: string;
   ntp_offset_ms: number | null;
+  signing_clock?:
+    | { status: "disabled" }
+    | { status: "ready"; earliest: number; latest: number }
+    | { status: "unavailable"; reason: string }
+    | null;
 }
 
 export interface ProtocolParams {
@@ -50,7 +55,7 @@ export interface BlockInfo {
   account: string;
   previous: string;
   representative: string;
-  /** Ascending odometer of cumulative BRN spent (burned+staked) — NOT available balance. */
+  /** Cumulative state-block brn_spent, exposed under the RPC's brn_balance name. */
   brn_balance: string;
   trst_balance: string;
   link: string;
@@ -171,7 +176,7 @@ export interface ProposalList {
   cursor?: string;
 }
 
-export interface ConstiArticle {
+export interface ConstitutionArticle {
   id: string;
   title: string;
   text: string;
@@ -179,8 +184,8 @@ export interface ConstiArticle {
   amended_at?: number | null;
 }
 
-export interface Consti {
-  articles: ConstiArticle[];
+export interface Constitution {
+  articles: ConstitutionArticle[];
   amendment_threshold: string;
 }
 

@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      protocol_revision:
+        description: Published protocol commit containing http_client (40-character SHA)
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -73,6 +78,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: node-gui
+      - id: protocol
+        name: Resolve pinned protocol dependency
+        env:
+          REQUESTED_REVISION: ${{ inputs.protocol_revision }}
+        run: |
+          revision="${REQUESTED_REVISION:-$(cat node-gui/ci/protocol-revision)}"
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || { echo "A full protocol commit SHA is required" >&2; exit 1; }
+          printf 'revision=%s\n' "$revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: BURST-UBI/protocol
+          ref: ${{ steps.protocol.outputs.revision }}
+          path: protocol
+      - name: Verify shared dependency is published
+        run: |
+          test -f protocol/http_client/Cargo.toml || { echo "Pinned protocol revision does not contain http_client; publish the dependency and update ci/protocol-revision" >&2; exit 1; }
+          cargo metadata --manifest-path node-gui/src-tauri/Cargo.toml --no-deps --format-version 1 > /dev/null
       - uses: actions/download-artifact@v4
         with:
           name: frontend-dist

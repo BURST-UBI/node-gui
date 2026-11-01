@@ -11,27 +11,13 @@ import { useRpc, useRpcUrl } from "@/hooks/use-rpc";
 import { formatUptime, formatAmount, formatExpiryPeriod } from "@/lib/utils";
 import type { Telemetry, ProtocolParams } from "@/lib/types";
 
-const MiniChart = lazy(() => import("@/components/telemetry-chart"));
+const TelemetryChart = lazy(() => import("@/components/telemetry-chart"));
 
-function NtpIndicator({ offsetMs }: { offsetMs: number | null }) {
-  if (offsetMs === null) return <p className="text-sm text-muted-foreground">No recent successful clock synchronization</p>;
-  const abs = Math.abs(offsetMs);
-  let color = "bg-success";
-  let label = "Excellent";
-  if (abs > 2000) {
-    color = "bg-destructive";
-    label = "Poor";
-  } else if (abs > 500) {
-    color = "bg-warning";
-    label = "Acceptable";
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
-      <span className="tabular-nums">{offsetMs} ms</span>
-      <span className="text-sm text-muted-foreground">{label}</span>
-    </div>
-  );
+function SigningClockIndicator({ clock }: { clock: Telemetry["signing_clock"] }) {
+  if (!clock) return <span className="text-muted-foreground">Not reported by this node</span>;
+  if (clock.status === "disabled") return <span className="text-muted-foreground">Not enabled</span>;
+  if (clock.status === "unavailable") return <span className="text-warning">Unavailable</span>;
+  return <span>Ready · {clock.latest - clock.earliest}s uncertainty</span>;
 }
 
 export default function Overview() {
@@ -49,18 +35,18 @@ export default function Overview() {
 
   const [chart, setChart] = useState<"blocks" | "peers" | "trst" | "verified">("blocks");
   const [history, setHistory] = useState<TelemetrySnapshot[]>([]);
-  const lastDataRef = useRef<string>("");
+  const lastSampleKey = useRef<string>("");
 
   useEffect(() => {
     setHistory([]);
-    lastDataRef.current = "";
+    lastSampleKey.current = "";
   }, [rpcUrl]);
 
   useEffect(() => {
     if (!data) return;
-    const sig = `${data.uptime_secs}-${data.block_count}-${data.peer_count}-${data.trst_circulating}-${data.verified_count}`;
-    if (sig === lastDataRef.current) return;
-    lastDataRef.current = sig;
+    const sampleKey = `${data.uptime_secs}-${data.block_count}-${data.peer_count}-${data.trst_circulating}-${data.verified_count}`;
+    if (sampleKey === lastSampleKey.current) return;
+    lastSampleKey.current = sampleKey;
 
     const snapshot: TelemetrySnapshot = {
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
@@ -93,7 +79,7 @@ export default function Overview() {
   }
 
   const isLoading = loading && !data;
-  const clockNeedsAttention = data && (data.ntp_offset_ms === null || Math.abs(data.ntp_offset_ms) > 2000);
+  const clockNeedsAttention = data?.signing_clock?.status === "unavailable";
 
   return (
     <div className="node-overview space-y-6">
@@ -128,7 +114,7 @@ export default function Overview() {
 
       {(clockNeedsAttention || paramsError || (data && (BigInt(data.trst_expired_total) > 0n || BigInt(data.trst_revoked_total) > 0n))) && (
         <div className="overview-notices" role="status">
-          {clockNeedsAttention && <p className="text-warning">{data.ntp_offset_ms === null ? "No recent successful clock synchronization" : `Clock offset ${data.ntp_offset_ms} ms — Poor synchronization`}</p>}
+          {data?.signing_clock?.status === "unavailable" && <p className="text-warning">Time-dependent signing is paused: {data.signing_clock.reason}.</p>}
           {paramsError && <p className="text-warning">Network parameters unavailable. Retrying…</p>}
           {data && BigInt(data.trst_expired_total) > 0n && <p>{formatAmount(data.trst_expired_total)} expired TRST</p>}
           {data && BigInt(data.trst_revoked_total) > 0n && <p className="text-destructive">{formatAmount(data.trst_revoked_total)} revoked TRST</p>}
@@ -147,7 +133,7 @@ export default function Overview() {
           </div>
           <div className="min-w-0 overflow-hidden" role="img" aria-label={`${chart} over this session; ${history.length} samples collected`}>
             <Suspense fallback={<div className="flex h-24 items-center justify-center text-caption text-muted-foreground">Loading chart…</div>}>
-            {history.length < 2 ? <div className="flex h-24 items-center justify-center text-caption text-muted-foreground">Collecting data…</div> : <MiniChart data={history} dataKey={chart} color="var(--color-primary)" type={chart === "blocks" || chart === "verified" ? "line" : "area"} />}
+            {history.length < 2 ? <div className="flex h-24 items-center justify-center text-caption text-muted-foreground">Collecting data…</div> : <TelemetryChart data={history} dataKey={chart} color="var(--color-primary)" type={chart === "blocks" || chart === "verified" ? "line" : "area"} />}
             </Suspense>
           </div>
           {data && <p className="sr-only">Latest: {data.block_count.toLocaleString()} {data.block_count === 1 ? "block" : "blocks"} · {data.peer_count.toLocaleString()} {data.peer_count === 1 ? "peer" : "peers"} · {formatAmount(data.trst_circulating)} TRST · {data.verified_count.toLocaleString()} verified {data.verified_count === 1 ? "wallet" : "wallets"}</p>}
@@ -157,8 +143,11 @@ export default function Overview() {
       <details className="overview-details">
         <summary>Network details</summary>
         <MetricGroup aria-label="Network details" className="overview-detail-values">
-          <MetricItem label={<HelpLabel label="Clock offset" explanation="Difference from network time. Large clock errors can disrupt node operation." />}>
-            {isLoading ? <Skeleton className="h-5 w-24" /> : data ? <NtpIndicator offsetMs={data.ntp_offset_ms} /> : "—"}
+          <MetricItem label={<HelpLabel label="Signing time" explanation="Authenticated time bounds used for checkpoint signing. Ready describes the clock, not overall signing eligibility." />}>
+            {isLoading ? <Skeleton className="h-5 w-24" /> : <SigningClockIndicator clock={data?.signing_clock} />}
+          </MetricItem>
+          <MetricItem label={<HelpLabel label="NTP offset (diagnostic)" explanation="Unauthenticated estimate of local clock offset. It does not authorize signing or establish network agreement." />}>
+            {isLoading ? <Skeleton className="h-5 w-24" /> : data?.ntp_offset_ms == null ? "No recent sample" : `${data.ntp_offset_ms} ms`}
           </MetricItem>
           <MetricItem label="Protocol version">{isLoading ? <Skeleton className="h-5 w-8" /> : data?.protocol_version ?? "—"}</MetricItem>
           <MetricItem label={<span className="metric-symbol-label">

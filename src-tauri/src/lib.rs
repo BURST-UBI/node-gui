@@ -4,6 +4,13 @@ mod commands;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
+                .on_navigation(|url| burst_http_client::allowed_app_navigation(url, cfg!(debug_assertions), 1420))
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                .build()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_telemetry,
             commands::get_protocol_params,

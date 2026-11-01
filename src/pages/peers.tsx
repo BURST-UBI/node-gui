@@ -17,7 +17,7 @@ function offsetColor(ms: number | null): string {
   return "text-red-400";
 }
 
-function SignalBars({ offsetMs }: { offsetMs: number | null }) {
+function ClockSyncBars({ offsetMs }: { offsetMs: number | null }) {
   if (offsetMs === null) return <span className="text-muted-foreground">—</span>;
   const abs = Math.abs(offsetMs);
   let bars = 4;
@@ -42,7 +42,7 @@ function SignalBars({ offsetMs }: { offsetMs: number | null }) {
   );
 }
 
-function qualityLabel(offsetMs: number | null): { label: string; color: string } {
+function clockSyncLabel(offsetMs: number | null): { label: string; color: string } {
   if (offsetMs === null) return { label:"Unknown", color:"text-muted-foreground" };
   const abs = Math.abs(offsetMs);
   if (abs < 100) return { label: "Excellent", color: "text-green-400" };
@@ -60,8 +60,8 @@ export default function Peers() {
   );
 
   const offsets = (data?.peers ?? []).flatMap(p => p.clock_offset_ms === null ? [] : [Math.abs(p.clock_offset_ms)]);
-  const avgOffset = offsets.length ? Math.round(offsets.reduce((a,b)=>a+b,0)/offsets.length) : null;
-  const worstOffset = offsets.length ? Math.max(...offsets) : null;
+  const averageOffsetMs = offsets.length ? Math.round(offsets.reduce((a,b)=>a+b,0)/offsets.length) : null;
+  const largestOffsetMs = offsets.length ? Math.max(...offsets) : null;
 
   return (
     <div className="space-y-6">
@@ -87,8 +87,8 @@ export default function Peers() {
 
       {data && data.peers.length > 0 && (
         <MetricGroup aria-label="Peer summary">
-          <MetricItem label="Average clock offset">{avgOffset !== null ? `${avgOffset} ms` : "—"}</MetricItem>
-          <MetricItem label="Largest clock offset">{worstOffset !== null ? `${worstOffset} ms` : "—"}</MetricItem>
+          <MetricItem label="Average clock offset">{averageOffsetMs !== null ? `${averageOffsetMs} ms` : "—"}</MetricItem>
+          <MetricItem label="Largest clock offset">{largestOffsetMs !== null ? `${largestOffsetMs} ms` : "—"}</MetricItem>
         </MetricGroup>
       )}
 
@@ -130,14 +130,14 @@ export default function Peers() {
                     <th className="pb-2 pr-4 font-normal">Address</th>
                     <th className="pb-2 pr-4 font-normal">Version</th>
                     <th className="pb-2 pr-4 font-normal">Clock Offset</th>
-                    <th className="pb-2 pr-4 font-normal">Quality</th>
+                    <th className="pb-2 pr-4 font-normal">Clock Sync</th>
                     <th className="pb-2 pr-4 font-normal">Type</th>
                     <th className="pb-2 font-normal">Last Seen</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {data.peers.map((peer) => {
-                    const quality = qualityLabel(peer.clock_offset_ms);
+                    const clockSync = clockSyncLabel(peer.clock_offset_ms);
                     return (
                       <tr
                         key={peer.node_id || peer.address}
@@ -154,8 +154,8 @@ export default function Peers() {
                         </td>
                         <td className="py-2.5 pr-4">
                           <div className="flex items-center gap-2">
-                            <SignalBars offsetMs={peer.clock_offset_ms} />
-                            <span className={`text-caption ${quality.color}`}>{quality.label}</span>
+                            <ClockSyncBars offsetMs={peer.clock_offset_ms} />
+                            <span className={`text-caption ${clockSync.color}`}>{clockSync.label}</span>
                           </div>
                         </td>
                         <td className="py-2.5 pr-4">
@@ -177,7 +177,7 @@ export default function Peers() {
       )}
 
       <ContextHelp summary="Why clock sync matters">
-        <p>BRN accrues with time. Nodes need synchronized clocks to calculate it consistently.</p>
+        <p>Peer clock offsets are diagnostics, not trusted signing time. Certified checkpoints coordinate time-dependent state changes.</p>
         <p className="font-mono text-caption">BRN = rate × (now − verified_at) − total_burned</p>
       </ContextHelp>
     </div>

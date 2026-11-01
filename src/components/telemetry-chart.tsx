@@ -16,7 +16,7 @@ export interface TelemetrySnapshot {
   verified: number;
 }
 
-export default function MiniChart({
+export default function TelemetryChart({
   data,
   dataKey,
   color,

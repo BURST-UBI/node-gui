@@ -34,7 +34,7 @@ import type {
 
 const BLOCK_TYPE_COLORS: Record<string, string> = {
   burn: "border-amber-500/50 bg-amber-500/10 text-amber-400",
-  send: "border-blue-500/50 bg-blue-500/10 text-blue-400",
+  send: "border-blue-500/50 bg-blue-500/10 text-primary",
   receive: "border-green-500/50 bg-green-500/10 text-green-400",
   endorse: "border-purple-500/50 bg-purple-500/10 text-purple-400",
   challenge: "border-red-500/50 bg-red-500/10 text-red-400",
@@ -48,7 +48,7 @@ const VERIFICATION_COLORS: Record<string, string> = {
   verified: "border-green-500/50 bg-green-500/10 text-green-400",
   unverified: "border-zinc-500/50 bg-zinc-500/10 text-zinc-400",
   endorsed: "border-amber-500/50 bg-amber-500/10 text-amber-400",
-  voting: "border-blue-500/50 bg-blue-500/10 text-blue-400",
+  voting: "border-blue-500/50 bg-blue-500/10 text-primary",
   challenged: "border-red-500/50 bg-red-500/10 text-red-400",
   revoked: "border-red-500/50 bg-red-500/10 text-red-400",
 };

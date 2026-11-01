@@ -35,17 +35,17 @@ export default function MergerGraph() {
   );
 
   const [originHash, setOriginHash] = useState("");
-  const [activeOrigin, setActiveOrigin] = useState<string | null>(null);
+  const [queriedOrigin, setQueriedOrigin] = useState<string | null>(null);
   const trace = useRpc<OriginTrace>(
     "trace_origin",
-    activeOrigin ? { rpcUrl, origin: activeOrigin } : null,
+    queriedOrigin ? { rpcUrl, origin: queriedOrigin } : null,
   );
 
   function handleTrace(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = originHash.trim();
-    if (trimmed === activeOrigin) trace.refetch();
-    if (trimmed) setActiveOrigin(trimmed);
+    if (trimmed === queriedOrigin) trace.refetch();
+    if (trimmed) setQueriedOrigin(trimmed);
   }
 
   const isLoading = loading && !data;

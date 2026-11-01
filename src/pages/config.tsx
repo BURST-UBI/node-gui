@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-// Keep unsaved configuration in memory across routes; never persist possible secrets.
+// Keep the unsaved draft in memory across routes; write it only on Save.
 let draft = { path: "/etc/burst/config.toml", loadedPath: "", content: "", saved: "", busy: false, error: "" };
 const listeners = new Set<() => void>();
 function update(next: Partial<typeof draft>) { draft = {...draft, ...next}; listeners.forEach(listener => listener()); }
